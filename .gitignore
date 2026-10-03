@@ -1,10 +1,24 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Dependencies
 node_modules/
+
+# Build output
 dist/
 build/
-.env
-*.local
-.DS_Store
-npm-debug.log*
 coverage/
+*.tsbuildinfo
+
+# OS / editor
+.DS_Store
 .vscode/*
 !.vscode/extensions.json
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
