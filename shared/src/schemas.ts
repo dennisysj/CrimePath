@@ -124,6 +124,53 @@ export type CreateEvidenceRequest = z.infer<typeof CreateEvidenceRequestSchema>;
 export type CreateEvidenceResponse = Evidence;
 export type ListEvidenceResponse = Evidence[];
 
+export const Reliability = z.enum(["unknown", "low", "medium", "high"]);
+export type Reliability = z.infer<typeof Reliability>;
+
+export const CaseEventSchema = z.object({
+  event_id: z.string(),
+  case_id: z.string(),
+  investigator_id: z.string(),
+  investigator_name: z.string(),
+  evidence_type: z.string(),
+  entity: z.string().nullable(),
+  start_datetime: z.string(),
+  end_datetime: z.string().nullable(),
+  location: z.string().nullable(),
+  latitude: z.number().nullable(),
+  longitude: z.number().nullable(),
+  description: z.string().nullable(),
+  source: z.string().nullable(),
+  evidence_file_url: z.string().nullable(),
+  investigator_notes: z.string().nullable(),
+  reliability: z.string(),
+  metadata: z.record(z.unknown()).nullable(),
+  created_at: z.string(),
+});
+export type CaseEvent = z.infer<typeof CaseEventSchema>;
+
+export const CreateCaseEventRequestSchema = z.object({
+  case_id: z.string().min(1, "Case ID is required"),
+  investigator_id: z.string().min(1, "Investigator ID is required"),
+  investigator_name: z.string().min(1, "Investigator name is required"),
+  evidence_type: z.string().min(1, "Evidence type is required"),
+  entity: z.string().optional(),
+  start_datetime: z.string().datetime("Start date/time must be valid"),
+  end_datetime: z.string().datetime("End date/time must be valid").optional(),
+  location: z.string().optional(),
+  latitude: z.number().finite().optional(),
+  longitude: z.number().finite().optional(),
+  description: z.string().optional(),
+  source: z.string().optional(),
+  evidence_file_url: z.string().url("Evidence file URL must be valid").optional().or(z.literal("")),
+  investigator_notes: z.string().optional(),
+  reliability: z.string().optional(),
+  metadata: z.record(z.unknown()).optional(),
+});
+export type CreateCaseEventRequest = z.infer<typeof CreateCaseEventRequestSchema>;
+export type CreateCaseEventResponse = CaseEvent;
+export type ListCaseEventsResponse = CaseEvent[];
+
 export interface ListEvidenceQuery {
   entityId?: string;
   from?: string;
