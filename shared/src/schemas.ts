@@ -128,12 +128,11 @@ export const Reliability = z.enum(["unknown", "low", "medium", "high"]);
 export type Reliability = z.infer<typeof Reliability>;
 
 export const CaseEventSchema = z.object({
-  event_id: z.string(),
+  evidence_id: z.string(),
   case_id: z.string(),
   investigator_id: z.string(),
   investigator_name: z.string(),
   evidence_type: z.string(),
-  entity: z.string().nullable(),
   start_datetime: z.string(),
   end_datetime: z.string().nullable(),
   location: z.string().nullable(),
@@ -154,7 +153,6 @@ export const CreateCaseEventRequestSchema = z.object({
   investigator_id: z.string().min(1, "Investigator ID is required"),
   investigator_name: z.string().min(1, "Investigator name is required"),
   evidence_type: z.string().min(1, "Evidence type is required"),
-  entity: z.string().optional(),
   start_datetime: z.string().datetime("Start date/time must be valid"),
   end_datetime: z.string().datetime("End date/time must be valid").optional(),
   location: z.string().optional(),

@@ -26,12 +26,11 @@ app.get("/api/cases/:caseId/evidence", async (req, res) => {
     const result = await pool.query<CaseEvent>(
       `
         SELECT
-          event_id::text,
+          evidence_id::text,
           case_id,
           investigator_id,
           investigator_name,
           evidence_type,
-          entity,
           start_datetime,
           end_datetime,
           location,
@@ -84,7 +83,6 @@ app.post("/api/cases/:caseId/evidence", async (req, res) => {
           investigator_id,
           investigator_name,
           evidence_type,
-          entity,
           start_datetime,
           end_datetime,
           location,
@@ -98,16 +96,15 @@ app.post("/api/cases/:caseId/evidence", async (req, res) => {
           metadata
         )
         VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8,
-          $9, $10, $11, $12, $13, $14, $15, $16
+          $1, $2, $3, $4, $5, $6, $7,
+          $8, $9, $10, $11, $12, $13, $14, $15
         )
         RETURNING
-          event_id::text,
+          evidence_id::text,
           case_id,
           investigator_id,
           investigator_name,
           evidence_type,
-          entity,
           start_datetime,
           end_datetime,
           location,
@@ -126,7 +123,6 @@ app.post("/api/cases/:caseId/evidence", async (req, res) => {
         event.investigator_id,
         event.investigator_name,
         event.evidence_type,
-        event.entity || null,
         event.start_datetime,
         event.end_datetime || null,
         event.location || null,
@@ -149,7 +145,6 @@ app.post("/api/cases/:caseId/evidence", async (req, res) => {
   }
 });
 
-// TODO (Phase 3): conflict engine + travel/gemini services.
 // TODO (Phase 3): conflict engine + travel/gemini services.
 
 const port = Number(process.env.PORT) || 4000;
