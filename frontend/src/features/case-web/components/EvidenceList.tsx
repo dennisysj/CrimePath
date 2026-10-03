@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react";
+import { Paperclip, Trash2 } from "lucide-react";
 import type { Evidence, Subject } from "../types";
 import type { Selection } from "../store";
 import { formatClock } from "../timeUtils";
@@ -83,7 +83,10 @@ export function EvidenceList({
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="font-mono text-xs text-neutral-500">{formatClock(e.eventTime)}</span>
+                <span className="flex items-center gap-1 font-mono text-xs text-neutral-500">
+                  {formatClock(e.eventTime)}
+                  {e.attachments && e.attachments.length > 0 && <Paperclip size={10} />}
+                </span>
                 <span className="text-[10px] uppercase tracking-wide text-neutral-500">
                   {EVIDENCE_TYPE_LABEL[e.evidenceType]}
                 </span>

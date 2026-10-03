@@ -1,6 +1,19 @@
-import { useState } from "react";
-import type { Evidence, EvidenceType, Subject, TimeCertainty } from "../types";
+import { useRef, useState } from "react";
+import { FileText, Paperclip, X } from "lucide-react";
+import type { Evidence, EvidenceAttachment, EvidenceType, Subject, TimeCertainty } from "../types";
 import { deriveApproximate, deriveExact, deriveRange } from "../timeUtils";
+import { formatBytes } from "../attachmentUtils";
+
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024; // 8MB — keeps data URLs from bloating memory in this mock UI
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
 
 interface AddEvidenceModalProps {
   open: boolean;
@@ -41,6 +54,9 @@ export function AddEvidenceModal({ open, subjects, onClose, onSubmit }: AddEvide
   const [approxMargin, setApproxMargin] = useState("10");
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
+  const [attachments, setAttachments] = useState<EvidenceAttachment[]>([]);
+  const [attachmentError, setAttachmentError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!open) return null;
 
@@ -59,6 +75,40 @@ export function AddEvidenceModal({ open, subjects, onClose, onSubmit }: AddEvide
     setApproxMargin("10");
     setRangeStart("");
     setRangeEnd("");
+    setAttachments([]);
+    setAttachmentError("");
+  }
+
+  async function handleFilesSelected(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return;
+    setAttachmentError("");
+    const files = Array.from(fileList);
+    const tooBig = files.filter((f) => f.size > MAX_ATTACHMENT_BYTES);
+    const ok = files.filter((f) => f.size <= MAX_ATTACHMENT_BYTES);
+
+    const next = await Promise.all(
+      ok.map(async (file, i) => {
+        const dataUrl = await readFileAsDataUrl(file);
+        const attachment: EvidenceAttachment = {
+          id: `att-${Date.now()}-${i}`,
+          name: file.name,
+          type: file.type || "application/octet-stream",
+          size: file.size,
+          dataUrl,
+        };
+        return attachment;
+      })
+    );
+
+    setAttachments((prev) => [...prev, ...next]);
+    if (tooBig.length > 0) {
+      setAttachmentError(`Skipped ${tooBig.length} file(s) over 8MB.`);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
   }
 
   function handleClose() {
@@ -90,6 +140,7 @@ export function AddEvidenceModal({ open, subjects, onClose, onSubmit }: AddEvide
       source: source.trim(),
       notes: notes.trim() || undefined,
       timeCertainty: certainty,
+      attachments: attachments.length > 0 ? attachments : undefined,
       ...times,
     });
     handleClose();
@@ -269,6 +320,58 @@ export function AddEvidenceModal({ open, subjects, onClose, onSubmit }: AddEvide
               className={`${inputClass} resize-none`}
             />
           </label>
+
+          <div>
+            <span className="mb-1 block text-xs text-neutral-400">Attachments (optional)</span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,.pdf,.doc,.docx,.txt"
+              onChange={(e) => handleFilesSelected(e.target.files)}
+              className="hidden"
+              id="evidence-attachments-input"
+            />
+            <label
+              htmlFor="evidence-attachments-input"
+              className="flex cursor-pointer items-center justify-center gap-1.5 rounded border border-dashed border-neutral-700 px-2 py-2 text-xs text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"
+            >
+              <Paperclip size={13} />
+              Upload documents or images
+            </label>
+            {attachmentError && <p className="mt-1 text-[11px] text-red-400">{attachmentError}</p>}
+
+            {attachments.length > 0 && (
+              <ul className="mt-2 space-y-1.5">
+                {attachments.map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex items-center gap-2 rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5"
+                  >
+                    {a.type.startsWith("image/") ? (
+                      <img src={a.dataUrl} alt="" className="h-8 w-8 flex-shrink-0 rounded object-cover" />
+                    ) : (
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded bg-neutral-800 text-neutral-500">
+                        <FileText size={15} />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs text-neutral-300">{a.name}</p>
+                      <p className="font-mono text-[10px] text-neutral-600">{formatBytes(a.size)}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(a.id)}
+                      aria-label="Remove attachment"
+                      className="flex-shrink-0 rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-red-400"
+                    >
+                      <X size={13} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
           <button
             type="button"

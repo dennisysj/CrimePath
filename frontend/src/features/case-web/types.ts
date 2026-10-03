@@ -29,6 +29,21 @@ export interface EvidenceLocation {
   lng: number;
 }
 
+/**
+ * A document or image attached to a piece of evidence (e.g. a photo of a
+ * receipt, a scanned statement, a screenshot of a text thread). Held as a
+ * data URL for this mock UI — swap for an uploaded-file reference once the
+ * real backend has storage.
+ */
+export interface EvidenceAttachment {
+  id: string;
+  name: string;
+  /** MIME type, e.g. "image/jpeg" or "application/pdf". */
+  type: string;
+  size: number;
+  dataUrl: string;
+}
+
 export interface Evidence {
   id: string;
   subjectId: string;
@@ -44,6 +59,7 @@ export interface Evidence {
   event: string;
   source: string;
   notes?: string;
+  attachments?: EvidenceAttachment[];
 }
 
 /**

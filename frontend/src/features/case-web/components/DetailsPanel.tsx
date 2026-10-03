@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
+import { FileText, Paperclip } from "lucide-react";
 import type { AiSuggestion, CaseAnalysis, Evidence, Subject } from "../types";
 import type { Selection } from "../store";
 import { formatClock, formatClockWithSeconds } from "../timeUtils";
+import { formatBytes } from "../attachmentUtils";
 
 interface DetailsPanelProps {
   subjects: Subject[];
@@ -90,6 +92,38 @@ export function DetailsPanel({
             <Row label="Source" value={selectedEvidence.source} />
             {selectedEvidence.notes && <Row label="Notes" value={selectedEvidence.notes} />}
           </dl>
+
+          {selectedEvidence.attachments && selectedEvidence.attachments.length > 0 && (
+            <div className="mt-3">
+              <h3 className="mb-1.5 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                <Paperclip size={11} /> Attachments ({selectedEvidence.attachments.length})
+              </h3>
+              <ul className="space-y-1.5">
+                {selectedEvidence.attachments.map((a) => (
+                  <li key={a.id}>
+                    <a
+                      href={a.dataUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 hover:border-neutral-600"
+                    >
+                      {a.type.startsWith("image/") ? (
+                        <img src={a.dataUrl} alt="" className="h-9 w-9 flex-shrink-0 rounded object-cover" />
+                      ) : (
+                        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded bg-neutral-800 text-neutral-500">
+                          <FileText size={16} />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs text-neutral-300">{a.name}</p>
+                        <p className="font-mono text-[10px] text-neutral-600">{formatBytes(a.size)}</p>
+                      </div>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {hasConnections && (
             <div className="mt-3 space-y-2">
