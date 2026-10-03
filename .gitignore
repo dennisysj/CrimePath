@@ -2,21 +2,21 @@
 .env
 .env.*
 !.env.example
+*.local
 
 # Dependencies
 node_modules/
-venv/
-.venv/
-__pycache__/
 
 # Build output
 dist/
 build/
-.next/
+coverage/
+*.tsbuildinfo
 
 # OS / editor
 .DS_Store
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 .idea/
 
 # Logs
