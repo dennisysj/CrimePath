@@ -16,7 +16,7 @@ interface LocationComboboxProps {
 }
 
 const inputClass =
-  "w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-neutral-100 placeholder:text-neutral-600 focus:border-sky-500 focus:outline-none";
+  "w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[var(--text)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none";
 
 /**
  * Typing filters locations already used in this case; picking one reuses
@@ -69,7 +69,8 @@ export function LocationCombobox({ value, locationStats, onChange }: LocationCom
       {open && (query.length > 0 || filtered.length > 0) && (
         <ul
           onMouseDown={cancelClose}
-          className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded border border-neutral-700 bg-neutral-900 py-1 shadow-lg thin-scrollbar"
+          className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded border py-1 shadow-lg thin-scrollbar"
+          style={{ borderColor: "var(--border)", background: "var(--surface)" }}
         >
           {filtered.map((stat) => (
             <li key={stat.name}>
@@ -77,10 +78,11 @@ export function LocationCombobox({ value, locationStats, onChange }: LocationCom
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => selectExisting(stat)}
-                className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm text-neutral-200 hover:bg-neutral-800"
+                className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm hover:bg-[var(--surface-2)]"
+                style={{ color: "var(--text)" }}
               >
                 <span className="truncate">{stat.name}</span>
-                <span className="ml-2 flex-shrink-0 font-mono text-[10px] text-neutral-500">
+                <span className="ml-2 flex-shrink-0 font-mono text-[10px]" style={{ color: "var(--text-muted)" }}>
                   {stat.count} evidence
                 </span>
               </button>
@@ -93,7 +95,8 @@ export function LocationCombobox({ value, locationStats, onChange }: LocationCom
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={selectNew}
-                className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-sm text-sky-400 hover:bg-neutral-800"
+                className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-sm hover:bg-[var(--surface-2)]"
+                style={{ color: "var(--accent)" }}
               >
                 <Plus size={13} />
                 Add "{value.trim()}" as new location
@@ -102,7 +105,7 @@ export function LocationCombobox({ value, locationStats, onChange }: LocationCom
           )}
 
           {filtered.length === 0 && query.length === 0 && (
-            <li className="px-3 py-1.5 text-xs text-neutral-500">Start typing a location…</li>
+            <li className="px-3 py-1.5 text-xs" style={{ color: "var(--text-muted)" }}>Start typing a location…</li>
           )}
         </ul>
       )}

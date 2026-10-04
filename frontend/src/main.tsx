@@ -1,6 +1,7 @@
 import React, { lazy, Suspense } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { Toaster } from "sonner"; // ADDED line 4: global toast host for the timeline redesign (collapse/expand, path view, add-evidence feedback)
 import "./index.css";
 import { CaseWebPage } from "./features/case-web";
 
@@ -30,6 +31,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         />
         <Route path="*" element={<CaseWebPage />} />
       </Routes>
+      <Toaster theme="dark" position="bottom-center" duration={1600} /> {/* UPDATED line 34: theme light->dark for the high-contrast dark theme */}
     </BrowserRouter>
   </React.StrictMode>,
 );

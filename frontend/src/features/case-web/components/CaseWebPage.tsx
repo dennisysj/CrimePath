@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Archive, Loader2, Pencil, Route, Trash2, Users, X } from "lucide-react";
 import { SAMPLE_CASE_ID, useCaseWebStore } from "../store";
 import { getCaseHistory, getEvidenceHistory, isMockMode } from "../api";
@@ -6,7 +6,7 @@ import { MIN_ROUTE_POINTS, getRoutePoints } from "../locationUtils";
 import type { Evidence, Subject } from "../types";
 import { formatClock } from "../timeUtils";
 import { AddEvidenceModal } from "./AddEvidenceModal";
-import { CardTimeline } from "./CardTimeline";
+import { CardTimeline, type CardTimelineHandle } from "./CardTimeline";
 import { EventPathModal } from "./EventPathModal";
 import { EvidenceList } from "./EvidenceList";
 import { ManageSubjectsModal } from "./ManageSubjectsModal";
@@ -170,10 +170,15 @@ export function CaseWebPage() {
   const currentCase = cases.find((c) => c.id === selectedCaseId);
   const isDemoCase = selectedCaseId === SAMPLE_CASE_ID;
   const [pathSubjectId, setPathSubjectId] = useState<string | null>(null);
+  const timelineRef = useRef<CardTimelineHandle>(null);
 
   // Store actions already put failures in the error banner; swallow the
   // rethrow here for fire-and-forget callers (list/details buttons).
   const removeEvidenceQuietly = (id: string) => removeEvidence(id).catch(() => undefined);
+
+  function jumpToEvidence(id: string) {
+    timelineRef.current?.focusEvidence(id);
+  }
 
   useEffect(() => {
     load();
@@ -332,7 +337,7 @@ export function CaseWebPage() {
             evidence={evidence}
             selection={selection}
             onSelectSubject={selectSubject}
-            onSelectEvidence={selectEvidence}
+            onJumpToEvidence={jumpToEvidence}
             onRemoveEvidence={removeEvidenceQuietly}
             onManageSubjects={() => setSubjectsOpen(true)}
           />
@@ -355,6 +360,8 @@ export function CaseWebPage() {
             </div>
           ) : (
             <CardTimeline
+              ref={timelineRef}
+              caseName={caseName}
               subjects={subjects}
               evidence={evidence}
               analysis={analysis}
@@ -519,6 +526,7 @@ export function CaseWebPage() {
         open={pathSubjectId !== null}
         subjects={subjects}
         evidence={evidence}
+        analysis={analysis}
         subjectId={pathSubjectId}
         onChangeSubject={setPathSubjectId}
         onSelectEvidence={(id) => {

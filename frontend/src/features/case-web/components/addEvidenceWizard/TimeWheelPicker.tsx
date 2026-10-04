@@ -19,10 +19,11 @@ const PERIODS: ClockPeriod[] = ["AM", "PM"];
  */
 export function TimeWheelPicker({ value, onChange, withSeconds }: TimeWheelPickerProps) {
   return (
-    <div className="relative flex items-center gap-1.5 rounded-md border border-neutral-800 bg-neutral-950/60 p-1.5">
-      <div className="pointer-events-none absolute inset-x-1.5 top-1/2 h-7 -translate-y-1/2 rounded border border-sky-700/40 bg-sky-500/5" />
+    <div className="relative flex items-center gap-1.5 rounded-md border p-1.5" style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}>
+      {/* UPDATED line 23: rgba was (47,91,234) — matches new --accent #3D6AF2 */}
+      <div className="pointer-events-none absolute inset-x-1.5 top-1/2 h-7 -translate-y-1/2 rounded border" style={{ borderColor: "var(--accent)", background: "rgba(61,106,242,0.06)" }} />
       <WheelColumn options={HOURS} value={value.hour || HOURS[0]} onChange={(h) => onChange({ ...value, hour: h })} />
-      <span className="text-neutral-600">:</span>
+      <span style={{ color: "var(--text-muted)" }}>:</span>
       <WheelColumn
         options={MINUTES_OR_SECONDS}
         value={value.minute || "00"}
@@ -30,7 +31,7 @@ export function TimeWheelPicker({ value, onChange, withSeconds }: TimeWheelPicke
       />
       {withSeconds && (
         <>
-          <span className="text-neutral-600">:</span>
+          <span style={{ color: "var(--text-muted)" }}>:</span>
           <WheelColumn
             options={MINUTES_OR_SECONDS}
             value={value.second || "00"}
@@ -98,18 +99,16 @@ function WheelColumn({ options, value, onChange }: WheelColumnProps) {
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      style={{ height: VIEWPORT_HEIGHT, scrollSnapType: "y mandatory", scrollbarWidth: "none" }}
-      className="w-11 overflow-y-scroll rounded border border-neutral-700 bg-neutral-950 [&::-webkit-scrollbar]:hidden"
+      style={{ height: VIEWPORT_HEIGHT, scrollSnapType: "y mandatory", scrollbarWidth: "none", borderColor: "var(--border)", background: "var(--bg)" }}
+      className="w-11 overflow-y-scroll rounded border [&::-webkit-scrollbar]:hidden"
     >
       <div style={{ height: ITEM_HEIGHT }} />
       {options.map((opt) => (
         <div
           key={opt}
           onClick={() => onChange(opt)}
-          style={{ height: ITEM_HEIGHT, scrollSnapAlign: "center" }}
-          className={`flex cursor-pointer items-center justify-center font-mono text-sm transition-colors ${
-            opt === value ? "font-semibold text-sky-300" : "text-neutral-500 hover:text-neutral-300"
-          }`}
+          style={{ height: ITEM_HEIGHT, scrollSnapAlign: "center", color: opt === value ? "var(--accent)" : "var(--text-muted)", fontWeight: opt === value ? 600 : 400 }}
+          className="flex cursor-pointer items-center justify-center font-mono text-sm transition-colors hover:brightness-110"
         >
           {opt}
         </div>
