@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Evidence, EvidenceType, Subject, TimeCertainty } from "../types";
 import { deriveApproximate, deriveExact, deriveRange } from "../timeUtils";
+import { extractEvidenceDraft } from "../extractApi";
 
 interface AddEvidenceModalProps {
   open: boolean;
@@ -42,6 +43,12 @@ export function AddEvidenceModal({ open, subjects, onClose, onSubmit }: AddEvide
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
 
+  const [showDraftBox, setShowDraftBox] = useState(false);
+  const [draftText, setDraftText] = useState("");
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
+  const [draftSubjectName, setDraftSubjectName] = useState<string | null>(null);
+
   if (!open) return null;
 
   function reset() {
@@ -59,11 +66,62 @@ export function AddEvidenceModal({ open, subjects, onClose, onSubmit }: AddEvide
     setApproxMargin("10");
     setRangeStart("");
     setRangeEnd("");
+    setShowDraftBox(false);
+    setDraftText("");
+    setExtractError(null);
+    setDraftSubjectName(null);
   }
 
   function handleClose() {
     reset();
     onClose();
+  }
+
+  async function handleExtract() {
+    if (!draftText.trim()) return;
+    setExtracting(true);
+    setExtractError(null);
+    try {
+      const { evidence, extractedSubjectName, extractedLocationName } = await extractEvidenceDraft(draftText);
+
+      if (evidence.evidenceType) setEvidenceType(evidence.evidenceType);
+      if (evidence.event) setEventDesc(evidence.event);
+      if (evidence.source) setSource(evidence.source);
+      if (evidence.notes) setNotes(evidence.notes);
+      if (extractedLocationName) setLocationName(extractedLocationName);
+
+      if (evidence.timeCertainty) {
+        setCertainty(evidence.timeCertainty);
+        if (evidence.timeCertainty === "exact" && evidence.eventTime) {
+          setExactValue(evidence.eventTime);
+        } else if (
+          evidence.timeCertainty === "approximate" &&
+          evidence.eventTime &&
+          evidence.earliestPossibleTime &&
+          evidence.latestPossibleTime
+        ) {
+          setApproxValue(evidence.eventTime);
+          const marginMs = new Date(evidence.latestPossibleTime).getTime() - new Date(evidence.eventTime).getTime();
+          setApproxMargin(String(Math.max(1, Math.round(Math.abs(marginMs) / 60_000))));
+        } else if (evidence.timeCertainty === "range" && evidence.earliestPossibleTime && evidence.latestPossibleTime) {
+          setRangeStart(evidence.earliestPossibleTime);
+          setRangeEnd(evidence.latestPossibleTime);
+        }
+      }
+
+      // Gemini has no DB access, so it can only name the subject, not match
+      // it to a real id - try a case-insensitive name match against the
+      // known subjects, and otherwise leave it for the investigator to pick.
+      setDraftSubjectName(extractedSubjectName ?? null);
+      const match = extractedSubjectName
+        ? subjects.find((s) => s.name.toLowerCase() === extractedSubjectName.toLowerCase())
+        : undefined;
+      if (match) setSubjectId(match.id);
+    } catch (err) {
+      setExtractError(err instanceof Error ? err.message : "Extraction failed.");
+    } finally {
+      setExtracting(false);
+    }
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -270,14 +328,43 @@ export function AddEvidenceModal({ open, subjects, onClose, onSubmit }: AddEvide
             />
           </label>
 
-          <button
-            type="button"
-            disabled
-            title="Coming soon: paste a raw statement and let Gemini draft the fields above"
-            className="w-full cursor-not-allowed rounded border border-dashed border-neutral-700 px-2 py-1.5 text-xs text-neutral-600"
-          >
-            Paste statement (AI draft — coming soon)
-          </button>
+          <div className="rounded border border-dashed border-neutral-700 p-2">
+            <button
+              type="button"
+              onClick={() => setShowDraftBox((v) => !v)}
+              className="w-full text-left text-xs text-neutral-400 hover:text-neutral-200"
+            >
+              {showDraftBox ? "▾" : "▸"} Paste statement (AI draft) — fills in the fields above for you to review
+            </button>
+
+            {showDraftBox && (
+              <div className="mt-2 space-y-2">
+                <textarea
+                  value={draftText}
+                  onChange={(e) => setDraftText(e.target.value)}
+                  placeholder='e.g. "I saw Alex near the bank around 9am, he left heading north."'
+                  rows={2}
+                  className={`${inputClass} resize-none`}
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleExtract}
+                    disabled={extracting || !draftText.trim()}
+                    className="rounded bg-neutral-700 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {extracting ? "Extracting…" : "Extract with Gemini"}
+                  </button>
+                  {draftSubjectName && (
+                    <span className="text-xs text-neutral-500">
+                      Mentioned: <span className="text-neutral-300">{draftSubjectName}</span> — confirm the Subject field above
+                    </span>
+                  )}
+                </div>
+                {extractError && <p className="text-xs text-red-400">{extractError}</p>}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
