@@ -81,6 +81,9 @@ export function EvidenceCard({ evidence, subjects, position, analysis, isSelecte
   const Icon = TYPE_ICON[evidence.evidenceType] ?? HelpCircle;
   const typeLabel = TYPE_LABEL[evidence.evidenceType] ?? "Other";
   const timeMain = formatEvidenceTimeLabel(evidence);
+  const [rawDate, rawClock] = timeMain.replace(/^~/, "").split(" ");
+  const timeDate = timeMain.startsWith("~") ? `~${rawDate}` : rawDate;
+  const timeClock = rawClock ?? "";
   const timeSub = formatCardTimeSub(evidence);
 
   const inConflict = analysis.conflicts.some((c) => c.evidenceIds.includes(evidence.id));
@@ -147,7 +150,10 @@ export function EvidenceCard({ evidence, subjects, position, analysis, isSelecte
       )}
 
       <div className="flex items-start justify-between gap-1">
-        <span className="font-mono text-[15px] font-medium">{timeMain}</span>
+        <span className="min-w-0 font-mono text-[10px] font-medium leading-tight">
+          <span className="block truncate">{timeDate}</span>
+          <span className="block truncate text-[11px]">{timeClock}</span>
+        </span>
         <span title={typeLabel} className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded" style={{ background: iconSquareBg }}>
           <Icon size={11} />
         </span>

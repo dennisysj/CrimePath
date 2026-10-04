@@ -1,13 +1,15 @@
-// Replaces the old single-screen Add Evidence form with a 3-step wizard
+// "Add event": step 1 picks the crime itself (its own one-page form) or an
+// evidence source, which continues as a 3-step wizard
 // (Source -> Details -> Uploads). Gemini extraction fills that draft so the
 // investigator can still review every field before submitting.
 import { useEffect, useMemo, useState } from "react";
 import { Check } from "lucide-react";
-import type { Evidence, EvidenceType, Subject, SubjectKind } from "../types";
-import { extractUploadedImageMetadata } from "../api";
+import type { Crime, Evidence, EvidenceType, Subject, SubjectKind } from "../types";
+import { geocodePlace, readUploadedFileMetadata, uploadFile, type CrimeInput } from "../api";
 import { extractEvidenceDraft } from "../extractApi";
 import { getEvidenceCoordinates } from "../locationUtils";
 import { StepSource } from "./addEvidenceWizard/StepSource";
+import { CrimeForm } from "./addEvidenceWizard/CrimeForm";
 import { StepDetails } from "./addEvidenceWizard/StepDetails";
 import { StepUploads } from "./addEvidenceWizard/StepUploads";
 import type { LocationStat } from "./addEvidenceWizard/LocationCombobox";
@@ -36,9 +38,13 @@ interface AddEvidenceModalProps {
   evidence: Evidence[];
   /** When set, the wizard edits this evidence instead of creating a new one. */
   initial?: Evidence;
+  /** When set, the modal opens straight on the crime form to edit this crime. */
+  initialCrime?: Crime;
   onClose: () => void;
   onSubmit: (input: Omit<Evidence, "id">) => void | Promise<void>;
   onAddSubject: (input: Omit<Subject, "id">) => Promise<Subject>;
+  onSubmitCrime: (input: CrimeInput) => Promise<void>;
+  onDeleteCrime?: () => Promise<void>;
 }
 
 const ALL_STEPS: WizardStep[] = [1, 2, 3];
@@ -72,9 +78,41 @@ function isoToDateAndClock(iso: string): { date: string; clock: ClockValue } | n
   };
 }
 
+const SUBJECT_PREFIXES = new Set(["person", "subject", "suspect", "witness", "phone", "vehicle", "car", "mr", "ms", "mrs"]);
+
+/** Words of a name, minus generic prefixes: "Person A" and "subject a" both -> ["a"]. */
+function nameKey(name: string): string {
+  return name
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word && !SUBJECT_PREFIXES.has(word))
+    .join(" ");
+}
+
+/** Match Gemini's subject name ("a", "subject a") to a case subject ("Person A"). */
+function findSubjectByName(subjects: Subject[], extracted: string): Subject | undefined {
+  const exact = subjects.find((s) => s.name.toLowerCase() === extracted.trim().toLowerCase());
+  if (exact) return exact;
+  const key = nameKey(extracted);
+  if (!key) return undefined;
+  const matches = subjects.filter((s) => nameKey(s.name) === key);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
 /** Mount fresh each time it opens (the parent renders it conditionally) so the draft starts from `initial`. */
-export function AddEvidenceModal({ subjects, evidence, initial, onClose, onSubmit, onAddSubject }: AddEvidenceModalProps) {
+export function AddEvidenceModal({
+  subjects,
+  evidence,
+  initial,
+  initialCrime,
+  onClose,
+  onSubmit,
+  onAddSubject,
+  onSubmitCrime,
+  onDeleteCrime,
+}: AddEvidenceModalProps) {
   const isEdit = Boolean(initial);
+  const [crimeMode, setCrimeMode] = useState(Boolean(initialCrime));
   const [step, setStep] = useState<WizardStep>(initial ? 2 : 1);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [slideEntered, setSlideEntered] = useState(true);
@@ -161,7 +199,14 @@ export function AddEvidenceModal({ subjects, evidence, initial, onClose, onSubmi
         patch.certainty = extracted.timeCertainty;
       }
 
-      if (extractedLocationName) patch.locationName = extractedLocationName;
+      if (extractedLocationName) {
+        // Reuse coordinates from a location already in this case; otherwise
+        // they're looked up below, once the rest of the draft is filled in.
+        const known = locationStats.find((l) => l.name.toLowerCase() === extractedLocationName.toLowerCase());
+        patch.locationName = known?.name ?? extractedLocationName;
+        patch.locationLat = known?.lat ?? null;
+        patch.locationLng = known?.lng ?? null;
+      }
 
       const noteParts = [extracted.event, extracted.notes].filter((part): part is string => Boolean(part));
       if (noteParts.length > 0) patch.notes = noteParts.join("\n");
@@ -195,13 +240,24 @@ export function AddEvidenceModal({ subjects, evidence, initial, onClose, onSubmi
       }
 
       setDraftSubjectName(extractedSubjectName ?? null);
-      const match = extractedSubjectName
-        ? subjects.find((subject) => subject.name.toLowerCase() === extractedSubjectName.toLowerCase())
-        : undefined;
+      const match = extractedSubjectName ? findSubjectByName(subjects, extractedSubjectName) : undefined;
       if (match) patch.subjectId = match.id;
 
       setDraft((current) => ({ ...current, ...patch }));
       if (patch.evidenceType && step === 1) goTo(2, "forward");
+
+      const placeName = patch.locationName;
+      if (placeName && patch.locationLat == null) {
+        // Best effort: if nothing matches, the investigator can Find or pick on the map.
+        const found = await geocodePlace(placeName).catch(() => null);
+        if (found) {
+          setDraft((current) =>
+            current.locationName === placeName && current.locationLat == null
+              ? { ...current, locationLat: found.lat, locationLng: found.lng }
+              : current
+          );
+        }
+      }
     } catch (err) {
       setExtractError(err instanceof Error ? err.message : "Extraction failed.");
     } finally {
@@ -245,18 +301,35 @@ export function AddEvidenceModal({ subjects, evidence, initial, onClose, onSubmi
     const created = await Promise.all(files.filter((f) => f.size <= MAX_ATTACHMENT_BYTES).map(fileToAttachment));
     setDraft((d) => ({ ...d, attachments: [...d.attachments, ...created] }));
 
+    // Step 1: save each file into src/images. Step 2 (images only): once it
+    // is saved, read its metadata from the saved file. From here on the
+    // attachment points at the saved file instead of carrying the data.
     for (const attachment of created) {
-      if (!attachment.mimeType.startsWith("image/")) continue;
-      setMetadataById((prev) => ({ ...prev, [attachment.id]: { state: "loading" } }));
+      const isImage = attachment.mimeType.startsWith("image/");
+      if (isImage) setMetadataById((prev) => ({ ...prev, [attachment.id]: { state: "saving" } }));
       try {
-        const metadata = await extractUploadedImageMetadata({
+        const uploaded = await uploadFile({
           fileName: attachment.name,
           fileType: attachment.mimeType,
           dataUrl: attachment.previewUrl,
         });
+        setDraft((d) => ({
+          ...d,
+          attachments: d.attachments.map((a) => (a.id === attachment.id ? { ...a, previewUrl: uploaded.previewUrl } : a)),
+        }));
+        if (!isImage) continue;
+
+        setMetadataById((prev) => ({ ...prev, [attachment.id]: { state: "loading" } }));
+        const metadata = await readUploadedFileMetadata(uploaded.storedFileName, {
+          fileName: attachment.name,
+          fileType: attachment.mimeType,
+        });
         setMetadataById((prev) => ({ ...prev, [attachment.id]: { state: "done", metadata } }));
         setDraft((d) => ({ ...d, ...metadataPatchForEmptyFields(d, metadata) }));
       } catch (error) {
+        // The file stays attached as data; the backend saves it to
+        // src/images when the evidence is submitted.
+        if (!isImage) continue;
         const reason =
           error instanceof TypeError
             ? "can't reach the backend. Is it running? (npm run dev from the repo root)"
@@ -323,7 +396,9 @@ export function AddEvidenceModal({ subjects, evidence, initial, onClose, onSubmi
         className="w-full max-w-md overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900 shadow-xl"
       >
         <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-4">
-          <h2 className="text-sm font-semibold text-neutral-100">{isEdit ? "Edit evidence" : "Add evidence"}</h2>
+          <h2 className="text-sm font-semibold text-neutral-100">
+            {initialCrime ? "Edit crime" : crimeMode ? "Add crime" : isEdit ? "Edit evidence" : "Add event"}
+          </h2>
           <button
             type="button"
             onClick={handleClose}
@@ -334,7 +409,26 @@ export function AddEvidenceModal({ subjects, evidence, initial, onClose, onSubmi
           </button>
         </div>
 
-        {submitted ? (
+        {crimeMode ? (
+          <CrimeForm
+            initial={initialCrime}
+            locationStats={locationStats}
+            onBack={initialCrime ? undefined : () => setCrimeMode(false)}
+            onCancel={handleClose}
+            onSave={async (input) => {
+              await onSubmitCrime(input);
+              onClose();
+            }}
+            onDelete={
+              initialCrime && onDeleteCrime
+                ? async () => {
+                    await onDeleteCrime();
+                    onClose();
+                  }
+                : undefined
+            }
+          />
+        ) : submitted ? (
           <div className="flex flex-col items-center gap-3 px-5 py-10 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400">
               <Check size={24} />
@@ -433,7 +527,7 @@ export function AddEvidenceModal({ subjects, evidence, initial, onClose, onSubmi
                   transition: "transform 280ms ease-out, opacity 280ms ease-out",
                 }}
               >
-                {step === 1 && <StepSource onSelect={handleSelectSource} />}
+                {step === 1 && <StepSource onSelect={handleSelectSource} onSelectCrime={() => setCrimeMode(true)} />}
                 {step === 2 && (
                   <StepDetails
                     draft={draft}

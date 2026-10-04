@@ -41,7 +41,7 @@ export function TimeRuler({ width, sections, ticks, onToggleSection }: TimeRuler
         // was drawn on top of it — see CardTimeline.tsx's fix (block now starts below RULER_HEIGHT).
         // Collapsed headers now always show the FULL range, stacked on two lines when collapsed so the
         // narrow strip never truncates it.
-        const [startLabel, endLabel] = s.label.split("–");
+        const [dateLabel, timeRange] = s.label.split(" ");
         const action = s.collapsed ? "Expand" : "Collapse";
         return (
           <motion.button
@@ -64,8 +64,8 @@ export function TimeRuler({ width, sections, ticks, onToggleSection }: TimeRuler
             </motion.span>
             {s.collapsed ? (
               <span className="flex min-w-0 flex-col justify-center text-[10px] font-medium leading-tight">
-                <span>{startLabel}–</span>
-                <span>{endLabel}</span>
+                <span>{dateLabel}</span>
+                <span>{timeRange}</span>
               </span>
             ) : (
               <span className="whitespace-nowrap font-medium">{s.label}</span>

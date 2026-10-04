@@ -1,14 +1,18 @@
-import type { CaseAnalysis, Evidence, InvolvedRole, Subject } from "../types";
+import type { CaseAnalysis, Crime, Evidence, InvolvedRole, Subject } from "../types";
 import { ROLE_LABELS } from "../types";
 import { formatEvidenceTimeLabel } from "../timeUtils";
 
-export const CARD_WIDTH = 124;
-export const CARD_HEIGHT = 90;
-export const COLUMN_GAP = 20;
+export const CARD_WIDTH = 172;
+export const CARD_HEIGHT = 108;
+export const COLUMN_GAP = 24;
 export const LANE_GAP = 60;
 export const RULER_HEIGHT = 56; // UPDATED: was 48 — two clearly separated rows (32px hour headers + 24px tick labels) need more room
-export const STRIP_WIDTH = 110; // UPDATED: was 88 — wide enough for a collapsed header ("8:00" + count pill) with no truncation
+export const STRIP_WIDTH = 152; // wide enough for date-stamped collapsed hour headers
 export const MARGIN = { top: RULER_HEIGHT + 12, left: 16, right: 16, bottom: 16 };
+/** Width of the thin column a crime's start/end marker takes in the time order. */
+export const CRIME_MARKER_WIDTH = 12;
+/** Extra space under the ruler for crime labels, added only when the case has crimes. */
+export const CRIME_LABEL_ROW = 26;
 /** Minimum gap left between a connector segment and the collapsed block it stops short of. */
 export const COLLAPSED_CLEARANCE = 8;
 
@@ -46,6 +50,16 @@ export interface HourSection {
   hasConflict: boolean;
 }
 
+/**
+ * A crime drawn across all lanes. startX/endX are the dashed boundary lines;
+ * endX is null for a single point in time (start only).
+ */
+export interface CrimeBand {
+  crime: Crime;
+  startX: number;
+  endX: number | null;
+}
+
 export interface TimeTick {
   x: number;
   label: string;
@@ -74,6 +88,7 @@ export interface CardLayoutResult {
   ticks: TimeTick[];
   canvasWidth: number;
   canvasHeight: number;
+  crimeBands: CrimeBand[];
   /** Top y of each subject's lane row — shared by the fixed lane-label column and the scrollable canvas, so they stay vertically aligned. */
   laneY: Map<string, number>;
 }
@@ -93,9 +108,10 @@ function hourKeyOf(iso: string): string {
 }
 
 function hourLabel(key: string): string {
+  const date = key.slice(0, 10);
   const h = Number(key.slice(-2));
   const next = (h + 1) % 24;
-  return `${h}:00–${next}:00`;
+  return `${date} ${String(h).padStart(2, "0")}:00-${String(next).padStart(2, "0")}:00`;
 }
 
 /** "with Person B", derived from whichever side's involvedParties names the other card's subject. Falls back to a generic label. */
@@ -158,7 +174,7 @@ function splitAroundCollapsed(
 }
 
 /**
- * Pure (evidence, subjects, analysis, collapsedHours) -> layout function.
+ * Pure (evidence, subjects, analysis, collapsedHours, crimes) -> layout function.
  * One shared chronological column order across all lanes groups into hour
  * sections; a collapsed section renders as one fixed-width strip per lane
  * instead of individual cards. Cards are evenly spaced by column/lane
@@ -169,7 +185,8 @@ export function computeCardLayout(
   evidence: Evidence[],
   subjects: Subject[],
   analysis: CaseAnalysis,
-  collapsedHours: ReadonlySet<string>
+  collapsedHours: ReadonlySet<string>,
+  crimes: Crime[] = []
 ): CardLayoutResult {
   const sortedAll = [...evidence].sort((a, b) => new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime());
   const byId = new Map(evidence.map((e) => [e.id, e]));
@@ -177,38 +194,69 @@ export function computeCardLayout(
   const laneIndexBySubject = new Map<string, number>();
   subjects.forEach((s, i) => laneIndexBySubject.set(s.id, i));
   const laneY = new Map<string, number>();
-  subjects.forEach((s, i) => laneY.set(s.id, MARGIN.top + i * LANE_STRIDE));
+  const lanesTop = MARGIN.top + (crimes.length > 0 ? CRIME_LABEL_ROW : 0);
+  subjects.forEach((s, i) => laneY.set(s.id, lanesTop + i * LANE_STRIDE));
 
   const conflictEvidenceIds = new Set(analysis.conflicts.flatMap((c) => c.evidenceIds));
 
-  // Group the globally-sorted list into contiguous hour buckets.
+  // Crime boundaries take part in the time order as thin marker columns, so
+  // evidence inside a crime window lands between its start and end lines.
+  // On a tie, a start sorts before evidence at that instant and an end after it.
+  type Slot =
+    | { kind: "evidence"; time: number; evidence: Evidence }
+    | { kind: "crime"; time: number; crimeId: string; edge: "start" | "end" };
+  const slots: Slot[] = sortedAll.map((e) => ({ kind: "evidence", time: new Date(e.eventTime).getTime(), evidence: e }));
+  crimes.forEach((c) => {
+    const start = new Date(c.start).getTime();
+    slots.push({ kind: "crime", time: start, crimeId: c.id, edge: "start" });
+    if (c.end && new Date(c.end).getTime() > start) {
+      slots.push({ kind: "crime", time: new Date(c.end).getTime(), crimeId: c.id, edge: "end" });
+    }
+  });
+  const tieRank = (slot: Slot) => (slot.kind === "evidence" ? 1 : slot.edge === "start" ? 0 : 2);
+  slots.sort((a, b) => a.time - b.time || tieRank(a) - tieRank(b));
+
+  // Group into contiguous hour buckets.
   const sectionOrder: string[] = [];
-  const sectionItems = new Map<string, Evidence[]>();
-  sortedAll.forEach((e) => {
-    const key = hourKeyOf(e.eventTime);
-    if (!sectionItems.has(key)) {
-      sectionItems.set(key, []);
+  const sectionSlots = new Map<string, Slot[]>();
+  slots.forEach((slot) => {
+    const key = hourKeyOf(new Date(slot.time).toISOString());
+    if (!sectionSlots.has(key)) {
+      sectionSlots.set(key, []);
       sectionOrder.push(key);
     }
-    sectionItems.get(key)!.push(e);
+    sectionSlots.get(key)!.push(slot);
   });
 
   const sectionKeyById = new Map<string, string>();
-  sectionItems.forEach((items, key) => items.forEach((e) => sectionKeyById.set(e.id, key)));
+  sectionSlots.forEach((items, key) =>
+    items.forEach((slot) => {
+      if (slot.kind === "evidence") sectionKeyById.set(slot.evidence.id, key);
+    })
+  );
 
   // Walk sections left -> right, laying out expanded ones by local column index and collapsed ones as one fixed-width strip.
   const sections: HourSection[] = [];
   const positions = new Map<string, CardPosition>();
   const chips: CollapsedChip[] = [];
   const ticks: TimeTick[] = [];
+  const crimeEdgeX = new Map<string, { start?: number; end?: number }>();
   let cursorX = MARGIN.left;
 
+  function setCrimeEdge(crimeId: string, edge: "start" | "end", x: number) {
+    crimeEdgeX.set(crimeId, { ...crimeEdgeX.get(crimeId), [edge]: x });
+  }
+
   sectionOrder.forEach((key) => {
-    const items = sectionItems.get(key)!;
+    const sectionItems = sectionSlots.get(key)!;
+    const items = sectionItems.flatMap((slot) => (slot.kind === "evidence" ? [slot.evidence] : []));
     const collapsed = collapsedHours.has(key);
     const hasConflict = items.some((e) => conflictEvidenceIds.has(e.id));
     const startX = cursorX;
-    const width = collapsed ? STRIP_WIDTH : items.length * CARD_WIDTH + (items.length - 1) * COLUMN_GAP;
+    const slotWidth = (slot: Slot) => (slot.kind === "evidence" ? CARD_WIDTH : CRIME_MARKER_WIDTH);
+    const width = collapsed
+      ? STRIP_WIDTH
+      : sectionItems.reduce((sum, slot) => sum + slotWidth(slot), 0) + (sectionItems.length - 1) * COLUMN_GAP;
 
     sections.push({ key, label: hourLabel(key), startX, width, collapsed, evidenceCount: items.length, hasConflict });
 
@@ -234,21 +282,41 @@ export function computeCardLayout(
           evidenceIds: subjectItems.map((e) => e.id),
         });
       });
+      // Inside a collapsed hour, place crime lines by how far into the hour they fall.
+      sectionItems.forEach((slot) => {
+        if (slot.kind !== "crime") return;
+        const minuteOfHour = new Date(slot.time).getUTCMinutes() + new Date(slot.time).getUTCSeconds() / 60;
+        setCrimeEdge(slot.crimeId, slot.edge, startX + (minuteOfHour / 60) * STRIP_WIDTH);
+      });
     } else {
-      items.forEach((e, localIndex) => {
-        const y = laneY.get(e.subjectId);
-        if (y === undefined) return;
-        const x = startX + localIndex * COLUMN_STRIDE;
-        positions.set(e.id, { id: e.id, x, y, column: localIndex, laneIndex: laneIndexBySubject.get(e.subjectId) ?? 0 });
-        ticks.push({ x, label: formatEvidenceTimeLabel(e) });
+      let x = startX;
+      let cardIndex = 0;
+      sectionItems.forEach((slot) => {
+        if (slot.kind === "crime") {
+          setCrimeEdge(slot.crimeId, slot.edge, x + CRIME_MARKER_WIDTH / 2);
+        } else {
+          const e = slot.evidence;
+          const y = laneY.get(e.subjectId);
+          if (y !== undefined) {
+            positions.set(e.id, { id: e.id, x, y, column: cardIndex, laneIndex: laneIndexBySubject.get(e.subjectId) ?? 0 });
+            ticks.push({ x, label: formatEvidenceTimeLabel(e) });
+          }
+          cardIndex++;
+        }
+        x += slotWidth(slot) + COLUMN_GAP;
       });
     }
 
     cursorX += width + COLUMN_GAP;
   });
 
+  const crimeBands: CrimeBand[] = crimes.flatMap((crime) => {
+    const edges = crimeEdgeX.get(crime.id);
+    return edges?.start === undefined ? [] : [{ crime, startX: edges.start, endX: edges.end ?? null }];
+  });
+
   const canvasWidth = Math.max(STRIP_WIDTH, cursorX - COLUMN_GAP + MARGIN.right);
-  const canvasHeight = Math.max(LANE_STRIDE, MARGIN.top + subjects.length * LANE_STRIDE + MARGIN.bottom - LANE_GAP);
+  const canvasHeight = Math.max(LANE_STRIDE, lanesTop + subjects.length * LANE_STRIDE + MARGIN.bottom - LANE_GAP);
   const collapsedSections = sections.filter((s) => s.collapsed);
 
   /** The point a connector should touch for this evidence: its own card edge if expanded, or its lane's collapsed-strip edge if not. */
@@ -368,7 +436,7 @@ export function computeCardLayout(
     });
   });
 
-  return { positions, chips, connectors, sections, ticks, canvasWidth, canvasHeight, laneY };
+  return { positions, chips, connectors, sections, ticks, canvasWidth, canvasHeight, crimeBands, laneY };
 }
 
 /** Which hour section a piece of evidence falls in — exported so the sidebar can expand the right hour before scrolling to it. */

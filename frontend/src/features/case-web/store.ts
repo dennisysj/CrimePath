@@ -1,15 +1,6 @@
 import { create } from "zustand";
-import { caseWebApi, type CaseUpdate, type SubjectInput } from "./api";
-import {
-  aiSuggestions as mockAiSuggestions,
-  caseName as mockCaseName,
-  conflicts as mockConflicts,
-  corroborations as mockCorroborations,
-  evidence as mockEvidence,
-  gaps as mockGaps,
-  subjects as mockSubjects,
-} from "./mockData";
-import type { AiSuggestionStatus, CaseAnalysis, CaseSummary, Evidence, Reliability, Subject } from "./types";
+import { caseWebApi, type CaseUpdate, type CrimeInput, type SubjectInput } from "./api";
+import type { AiSuggestionStatus, CaseAnalysis, CaseSummary, Crime, Evidence, Reliability, Subject } from "./types";
 
 const EMPTY_ANALYSIS: CaseAnalysis = {
   conflicts: [],
@@ -20,6 +11,15 @@ const EMPTY_ANALYSIS: CaseAnalysis = {
 
 export type Selection = { type: "evidence"; id: string } | { type: "subject"; id: string } | null;
 
+/** True if the evidence belongs to, or involves, any of the given subjects. Empty filter matches everything. */
+export function matchesSubjectFilter(evidence: Evidence, subjectIds: string[]): boolean {
+  if (subjectIds.length === 0) return true;
+  return (
+    subjectIds.includes(evidence.subjectId) ||
+    (evidence.involvedParties ?? []).some((p) => subjectIds.includes(p.subjectId))
+  );
+}
+
 type EvidenceInput = Omit<Evidence, "id">;
 
 interface CaseWebState {
@@ -28,10 +28,14 @@ interface CaseWebState {
   caseName: string;
   subjects: Subject[];
   evidence: Evidence[];
+  /** When/where the crime itself happened — drawn as bands on the timeline. */
+  crimes: Crime[];
   analysis: CaseAnalysis;
   loading: boolean;
   error: string | null;
   selection: Selection;
+  /** Subjects the evidence list, timeline and event path are filtered to. Empty = all subjects. */
+  subjectFilter: string[];
   /** Evidence ids added during this session, so the timeline can fade them in once. */
   newEvidenceIds: Set<string>;
   load: () => Promise<void>;
@@ -47,40 +51,23 @@ interface CaseWebState {
   setReliability: (id: string, reliability: Reliability) => Promise<void>;
   removeEvidence: (id: string) => Promise<void>;
   updateSuggestionStatus: (id: string, status: AiSuggestionStatus) => Promise<void>;
+  addCrime: (input: CrimeInput) => Promise<void>;
+  updateCrime: (id: string, input: CrimeInput) => Promise<void>;
+  removeCrime: (id: string) => Promise<void>;
   selectEvidence: (id: string) => void;
   selectSubject: (id: string) => void;
+  toggleSubjectFilter: (id: string) => void;
+  clearSubjectFilter: () => void;
   clearSelection: () => void;
   clearError: () => void;
 }
 
 const NEW_EVIDENCE_HIGHLIGHT_MS = 1000;
-/** The built-in demo case lives only in the browser; every other case is stored in TigerData. */
-export const SAMPLE_CASE_ID = "sample-case";
-const DEMO_CASE: CaseSummary = { id: SAMPLE_CASE_ID, name: `${mockCaseName} (demo, not saved)`, description: "Original fake test case" };
-const DEMO_ANALYSIS: CaseAnalysis = {
-  conflicts: [...mockConflicts],
-  gaps: [...mockGaps],
-  corroborations: [...mockCorroborations],
-  aiSuggestions: mockAiSuggestions.map((s) => ({ ...s })),
-};
+const SEEDED_CASE_NUMBER = "CASE-001";
+const SEEDED_CASE_NAME = "sample case";
+const SEEDED_CASE_VERSION = "case-001-rich-2026-10-03-v1";
+const SEEDED_CASE_VERSION_KEY = "crimepath:seededCase001Version";
 const LAST_CASE_KEY = "crimepath:lastCaseId";
-
-let nextLocalSeq = 1;
-
-function withSampleCase(cases: CaseSummary[]): CaseSummary[] {
-  return [...cases.filter((c) => c.id !== DEMO_CASE.id), DEMO_CASE];
-}
-
-function sampleCaseState(): Partial<CaseWebState> {
-  return {
-    selectedCaseId: SAMPLE_CASE_ID,
-    caseName: mockCaseName,
-    subjects: [...mockSubjects],
-    evidence: [...mockEvidence],
-    analysis: DEMO_ANALYSIS,
-    selection: null,
-  };
-}
 
 function rememberCase(id: string) {
   try {
@@ -98,13 +85,19 @@ function rememberedCase(): string | null {
   }
 }
 
+function rememberSeedVersion() {
+  try {
+    localStorage.setItem(SEEDED_CASE_VERSION_KEY, SEEDED_CASE_VERSION);
+  } catch {
+    // Storage unavailable; the backend case still exists.
+  }
+}
+
 function messageOf(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
 export const useCaseWebStore = create<CaseWebState>((set, get) => {
-  const isDemo = () => get().selectedCaseId === SAMPLE_CASE_ID;
-
   /**
    * Run a database write. On failure, surface the error in the banner and
    * rethrow so the calling form can stay open; local state is only changed
@@ -133,18 +126,15 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
   }
 
   async function loadCase(cases: CaseSummary[], caseId: string) {
-    if (caseId === SAMPLE_CASE_ID) {
-      set({ cases, ...sampleCaseState(), loading: false });
-      return;
-    }
-    const [caseName, subjects, evidence, analysis] = await Promise.all([
+    const [caseName, subjects, evidence, analysis, crimes] = await Promise.all([
       caseWebApi.getCaseName(caseId),
       caseWebApi.getSubjects(caseId),
       caseWebApi.getEvidence(caseId),
       caseWebApi.getAnalysis(caseId),
+      caseWebApi.getCrimes(caseId),
     ]);
     rememberCase(caseId);
-    set({ cases, selectedCaseId: caseId, caseName, subjects, evidence, analysis, selection: null, loading: false });
+    set({ cases, selectedCaseId: caseId, caseName, subjects, evidence, crimes, analysis, selection: null, subjectFilter: [], loading: false });
   }
 
   return {
@@ -153,26 +143,43 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
     caseName: "",
     subjects: [],
     evidence: [],
+    crimes: [],
     analysis: EMPTY_ANALYSIS,
     loading: true,
     error: null,
     selection: null,
+    subjectFilter: [],
     newEvidenceIds: new Set(),
 
     load: async () => {
       set({ loading: true, error: null });
       try {
-        const cases = withSampleCase(await caseWebApi.getCases());
+        let cases = await caseWebApi.getCases();
+        let seededCase = cases.find((c) => c.caseNumber === SEEDED_CASE_NUMBER || c.name.toLowerCase() === SEEDED_CASE_NAME);
+        // Seed the sample case only when it doesn't exist. Never re-seed an
+        // existing one: seeding wipes the case, which would bring back
+        // anything the investigator deleted and drop anything they added.
+        if (!seededCase) {
+          seededCase = await caseWebApi.seedSampleCase();
+          rememberSeedVersion();
+          cases = await caseWebApi.getCases();
+        }
         const preferred = [get().selectedCaseId, rememberedCase()].find(
           (id) => id && cases.some((c) => c.id === id)
         );
-        await loadCase(cases, preferred ?? cases[0].id);
+        await loadCase(cases, preferred ?? seededCase.id);
       } catch (error) {
         set({
-          cases: [DEMO_CASE],
-          ...sampleCaseState(),
+          cases: [],
+          selectedCaseId: "",
+          caseName: "",
+          subjects: [],
+          evidence: [],
+          crimes: [],
+          analysis: EMPTY_ANALYSIS,
+          selection: null,
           loading: false,
-          error: `Can't reach the database, showing the demo case (changes won't be saved). ${messageOf(
+          error: `Can't reach the database or create CASE-001. ${messageOf(
             error,
             "Failed to load case data"
           )}`,
@@ -191,11 +198,10 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
 
     createCase: async (input) => {
       const created = await persist("Couldn't create case", () => caseWebApi.createCase(input));
-      await loadCase(withSampleCase([created, ...get().cases]), created.id);
+      await loadCase([created, ...get().cases], created.id);
     },
 
     updateCase: async (input) => {
-      if (isDemo()) return;
       const updated = await persist("Couldn't update case", () => caseWebApi.updateCase(get().selectedCaseId, input));
       set((state) => ({
         caseName: updated.name,
@@ -204,16 +210,14 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
     },
 
     deleteCase: async (id) => {
-      if (id === SAMPLE_CASE_ID) return;
       await persist("Couldn't delete case", () => caseWebApi.deleteCase(id));
       const remaining = get().cases.filter((c) => c.id !== id);
-      await loadCase(remaining, remaining[0].id);
+      if (remaining.length > 0) await loadCase(remaining, remaining[0].id);
+      else await get().load();
     },
 
     addSubject: async (input) => {
-      const created = isDemo()
-        ? { ...input, id: `local-subject-${nextLocalSeq++}` }
-        : await persist("Couldn't add subject", () => caseWebApi.addSubject(get().selectedCaseId, input));
+      const created = await persist("Couldn't add subject", () => caseWebApi.addSubject(get().selectedCaseId, input));
       set((state) => ({ subjects: [...state.subjects, created] }));
       return created;
     },
@@ -221,45 +225,43 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
     updateSubject: async (id, input) => {
       const current = get().subjects.find((s) => s.id === id);
       if (!current) return;
-      const updated = isDemo()
-        ? { ...current, ...input }
-        : await persist("Couldn't update subject", () =>
+      const updated = await persist("Couldn't update subject", () =>
             caseWebApi.updateSubject(get().selectedCaseId, id, input)
           );
       set((state) => ({ subjects: state.subjects.map((s) => (s.id === id ? updated : s)) }));
     },
 
     removeSubject: async (id) => {
-      if (isDemo()) {
-        const count = get().evidence.filter((e) => e.subjectId === id).length;
-        if (count > 0) {
-          const message = `This subject still has ${count} evidence item${count === 1 ? "" : "s"}. Reassign or remove them first.`;
-          set({ error: `Couldn't delete subject: ${message}` });
-          throw new Error(message);
-        }
-      } else {
-        await persist("Couldn't delete subject", () => caseWebApi.removeSubject(get().selectedCaseId, id));
-      }
+      await persist("Couldn't delete subject", () => caseWebApi.removeSubject(get().selectedCaseId, id));
+      // The subject's evidence went with it, so drop those cards, unlink it elsewhere, and refresh the analysis.
+      const analysis = await persist("Couldn't refresh analysis", () => caseWebApi.getAnalysis(get().selectedCaseId));
       set((state) => ({
+        analysis,
+        evidence: state.evidence
+          .filter((e) => e.subjectId !== id)
+          .map((e) => ({ ...e, involvedParties: (e.involvedParties ?? []).filter((p) => p.subjectId !== id) })),
         subjects: state.subjects.filter((s) => s.id !== id),
-        selection: state.selection?.type === "subject" && state.selection.id === id ? null : state.selection,
+        subjectFilter: state.subjectFilter.filter((s) => s !== id),
+        // Deselect the subject itself, or a card of theirs that was just deleted.
+        selection:
+          (state.selection?.type === "subject" && state.selection.id === id) ||
+          (state.selection?.type === "evidence" &&
+            state.evidence.some((e) => e.id === state.selection!.id && e.subjectId === id))
+            ? null
+            : state.selection,
       }));
     },
 
     addEvidence: async (input) => {
-      const created = isDemo()
-        ? { ...input, id: `local-${nextLocalSeq++}` }
-        : await persist("Couldn't save evidence", () => caseWebApi.addEvidence(get().selectedCaseId, input));
-      const analysis = isDemo() ? get().analysis : await persist("Couldn't refresh analysis", () => caseWebApi.getAnalysis(get().selectedCaseId));
+      const created = await persist("Couldn't save evidence", () => caseWebApi.addEvidence(get().selectedCaseId, input));
+      const analysis = await persist("Couldn't refresh analysis", () => caseWebApi.getAnalysis(get().selectedCaseId));
       set((state) => ({ evidence: [...state.evidence, created], analysis }));
       flashNewEvidence(created.id);
     },
 
     updateEvidence: async (id, input) => {
       const current = get().evidence.find((e) => e.id === id);
-      const updated = isDemo()
-        ? { ...current, ...input, id }
-        : await persist("Couldn't update evidence", () =>
+      const updated = await persist("Couldn't update evidence", () =>
             caseWebApi.updateEvidence(get().selectedCaseId, id, input)
           );
       set((state) => ({ evidence: state.evidence.map((e) => (e.id === id ? updated : e)) }));
@@ -268,19 +270,15 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
     setReliability: async (id, reliability) => {
       const current = get().evidence.find((e) => e.id === id);
       if (!current) return;
-      const updated = isDemo()
-        ? { ...current, reliability }
-        : await persist("Couldn't update reliability", () =>
+      const updated = await persist("Couldn't update reliability", () =>
             caseWebApi.setReliability(get().selectedCaseId, id, reliability)
           );
       set((state) => ({ evidence: state.evidence.map((e) => (e.id === id ? updated : e)) }));
     },
 
     removeEvidence: async (id) => {
-      if (!isDemo()) {
-        await persist("Couldn't remove evidence", () => caseWebApi.removeEvidence(get().selectedCaseId, id));
-      }
-      const analysis = isDemo() ? get().analysis : await persist("Couldn't refresh analysis", () => caseWebApi.getAnalysis(get().selectedCaseId));
+      await persist("Couldn't remove evidence", () => caseWebApi.removeEvidence(get().selectedCaseId, id));
+      const analysis = await persist("Couldn't refresh analysis", () => caseWebApi.getAnalysis(get().selectedCaseId));
       set((state) => ({
         evidence: state.evidence.filter((e) => e.id !== id),
         analysis,
@@ -289,17 +287,30 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
     },
 
     updateSuggestionStatus: async (id, status) => {
-      if (!isDemo()) {
-        await persist("Couldn't save suggestion decision", () =>
-          caseWebApi.updateSuggestionStatus(id, status, get().selectedCaseId)
-        );
-      }
+      await persist("Couldn't save suggestion decision", () =>
+        caseWebApi.updateSuggestionStatus(id, status, get().selectedCaseId)
+      );
       set({
         analysis: {
           ...get().analysis,
           aiSuggestions: get().analysis.aiSuggestions.map((s) => (s.id === id ? { ...s, status } : s)),
         },
       });
+    },
+
+    addCrime: async (input) => {
+      const created = await persist("Couldn't save crime", () => caseWebApi.addCrime(get().selectedCaseId, input));
+      set((state) => ({ crimes: [...state.crimes, created] }));
+    },
+
+    updateCrime: async (id, input) => {
+      const updated = await persist("Couldn't update crime", () => caseWebApi.updateCrime(get().selectedCaseId, id, input));
+      set((state) => ({ crimes: state.crimes.map((c) => (c.id === id ? updated : c)) }));
+    },
+
+    removeCrime: async (id) => {
+      await persist("Couldn't remove crime", () => caseWebApi.removeCrime(get().selectedCaseId, id));
+      set((state) => ({ crimes: state.crimes.filter((c) => c.id !== id) }));
     },
 
     selectEvidence: (id) =>
@@ -315,6 +326,19 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
           ? { selection: null }
           : { selection: { type: "subject", id } }
       ),
+
+    toggleSubjectFilter: (id) =>
+      set((state) => {
+        const subjectFilter = state.subjectFilter.includes(id)
+          ? state.subjectFilter.filter((s) => s !== id)
+          : [...state.subjectFilter, id];
+        // A selected card that the new filter hides is deselected.
+        const selected = state.selection?.type === "evidence" ? state.evidence.find((e) => e.id === state.selection!.id) : undefined;
+        const selection = selected && !matchesSubjectFilter(selected, subjectFilter) ? null : state.selection;
+        return { subjectFilter, selection };
+      }),
+
+    clearSubjectFilter: () => set({ subjectFilter: [] }),
 
     clearSelection: () => set({ selection: null }),
     clearError: () => set({ error: null }),

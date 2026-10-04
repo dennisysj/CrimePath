@@ -42,14 +42,22 @@ cp .env.example .env   # fill in DATABASE_URL at minimum for backend work
 
 ```bash
 npm run dev          # runs backend + frontend concurrently
-npm run migrate       # (backend) run SQL migrations against DATABASE_URL
-npm run seed          # (backend) load the demo case from shared/
-npm test              # (backend) vitest — conflict engine unit tests
+npm run test:data-flow # checks saved data against the running backend; cleans up its temporary cases
 ```
 
 Frontend-only development (no backend/DB needed): set `VITE_USE_MOCK=true`
 in `.env` and run `npm run dev -w frontend`. The mock API client is seeded
 from the same `shared/` demo data the backend uses, so both sides match.
+
+For saved investigations, set `VITE_USE_MOCK=false` and a valid `DATABASE_URL`
+in the root `.env`, then restart the frontend. The backend prepares
+`db/schema.sql` automatically at startup. New cases start empty and are stored
+in the database, along with subjects, evidence, and attachments. History starts
+with the first edit; unchanged saves do not add entries.
+
+Mock mode is temporary: its cases and histories disappear on reload. The
+built-in case labeled “demo, not saved” is also temporary in database mode.
+Conflict analysis and AI suggestions for saved cases are not implemented yet.
 
 ## API reference
 

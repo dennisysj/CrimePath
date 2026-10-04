@@ -10,7 +10,7 @@ const RELIABILITY_COLOR: Record<Reliability, string> = {
   corroborated: "text-emerald-300",
   disputed: "text-red-300",
 };
-import { formatClock, formatClockWithSeconds } from "../timeUtils";
+import { formatDateTime } from "../timeUtils";
 import { formatBytes } from "../attachmentUtils";
 import type { HistoryEntry } from "../api";
 import { HistoryList } from "./HistoryList";
@@ -128,21 +128,21 @@ export function EvidenceDetailPanel({
           label="Time"
           value={
             evidence.timeCertainty === "exact"
-              ? formatClockWithSeconds(evidence.eventTime)
+              ? formatDateTime(evidence.eventTime, true)
               : evidence.timeCertainty === "range"
-                ? `${formatClock(evidence.earliestPossibleTime)}–${formatClock(evidence.latestPossibleTime)}`
-                : `${formatClock(evidence.earliestPossibleTime)}–${formatClock(evidence.latestPossibleTime)} (reported ${formatClock(evidence.eventTime)})`
+                ? `${formatDateTime(evidence.earliestPossibleTime)} - ${formatDateTime(evidence.latestPossibleTime)}`
+                : `${formatDateTime(evidence.earliestPossibleTime)} - ${formatDateTime(evidence.latestPossibleTime)} (reported ${formatDateTime(evidence.eventTime)})`
           }
         />
         <Row label="Location" value={formatLocationLabel(evidence)} />
-        <div className="flex items-center gap-2">
-          <dt className="w-16 flex-shrink-0 text-neutral-600">Reliability</dt>
-          <dd>
+        <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-2">
+          <dt className="text-neutral-600">Reliability</dt>
+          <dd className="min-w-0">
             <select
               value={evidence.reliability ?? "unknown"}
               onChange={(e) => onSetReliability(evidence.id, e.target.value as Reliability)}
               title="Investigator's assessment of this event's evidentiary standing"
-              className={`rounded border border-neutral-700 bg-neutral-950 px-1.5 py-0.5 text-xs capitalize focus:border-sky-500 focus:outline-none ${RELIABILITY_COLOR[evidence.reliability ?? "unknown"]}`}
+              className={`max-w-full rounded border border-neutral-700 bg-neutral-950 px-1.5 py-0.5 text-xs capitalize focus:border-sky-500 focus:outline-none ${RELIABILITY_COLOR[evidence.reliability ?? "unknown"]}`}
             >
               {RELIABILITY_OPTIONS.map((r) => (
                 <option key={r} value={r}>
@@ -216,7 +216,7 @@ export function EvidenceDetailPanel({
               key={g.id}
               tone="neutral"
               badge="Gap"
-              text={`${subjects.find((s) => s.id === g.subjectId)?.name ?? "Subject"} — ${Math.round(g.durationMinutes)} min unaccounted between ${formatClock(g.start)} and ${formatClock(g.end)}.`}
+              text={`${subjects.find((s) => s.id === g.subjectId)?.name ?? "Subject"} — ${Math.round(g.durationMinutes)} min unaccounted between ${formatDateTime(g.start)} and ${formatDateTime(g.end)}.`}
             />
           ))}
           {relatedCorroborations.map((c) => (
@@ -249,9 +249,9 @@ export function EvidenceDetailPanel({
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex gap-2">
-      <dt className="w-16 flex-shrink-0 text-neutral-600">{label}</dt>
-      <dd className="text-neutral-300">{value}</dd>
+    <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
+      <dt className="text-neutral-600">{label}</dt>
+      <dd className="min-w-0 break-words text-neutral-300">{value}</dd>
     </div>
   );
 }
@@ -303,3 +303,4 @@ function SuggestionNote({
     </div>
   );
 }
+

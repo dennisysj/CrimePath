@@ -1,6 +1,7 @@
-import type { AiSuggestionStatus, CaseAnalysis, CaseSummary, Evidence, Reliability, Subject } from "./types";
+import type { AiSuggestionStatus, CaseAnalysis, CaseSummary, Crime, Evidence, Reliability, Subject } from "./types";
 
 export type SubjectInput = Omit<Subject, "id">;
+export type CrimeInput = Omit<Crime, "id">;
 
 export interface CaseUpdate {
   name?: string;
@@ -25,7 +26,7 @@ export interface CaseWebApi {
   createCase(input: { name: string; description?: string }): Promise<CaseSummary>;
   updateCase(caseId: string, input: CaseUpdate): Promise<CaseSummary>;
   deleteCase(caseId: string): Promise<void>;
-  seedDemoCase(): Promise<CaseSummary>;
+  seedSampleCase(): Promise<CaseSummary>;
   getCaseName(caseId: string): Promise<string>;
   getSubjects(caseId: string): Promise<Subject[]>;
   addSubject(caseId: string, input: SubjectInput): Promise<Subject>;
@@ -38,6 +39,10 @@ export interface CaseWebApi {
   removeEvidence(caseId: string, id: string): Promise<void>;
   getAnalysis(caseId: string): Promise<CaseAnalysis>;
   updateSuggestionStatus(id: string, status: AiSuggestionStatus, caseId: string): Promise<void>;
+  getCrimes(caseId: string): Promise<Crime[]>;
+  addCrime(caseId: string, input: CrimeInput): Promise<Crime>;
+  updateCrime(caseId: string, id: string, input: CrimeInput): Promise<Crime>;
+  removeCrime(caseId: string, id: string): Promise<void>;
 }
 
 const MOCK_DELAY_MS = 300;
@@ -112,7 +117,7 @@ class MockCaseWebApi implements CaseWebApi {
     this.data(caseId);
     return delay([...(this.caseHistory.get(caseId) ?? [])]);
   }
-  private cases: CaseSummary[] = [{ id: "1", name: mockCaseName, description: "Demo case" }];
+  private cases: CaseSummary[] = [{ id: "1", name: mockCaseName, description: "Seeded case" }];
   private nextCaseSeq = 2;
   private caseData = new Map<string, { subjects: Subject[]; evidence: Evidence[]; analysis: CaseAnalysis }>([
     ["1", {
@@ -180,7 +185,7 @@ class MockCaseWebApi implements CaseWebApi {
     return delay(undefined);
   }
 
-  seedDemoCase(): Promise<CaseSummary> {
+  seedSampleCase(): Promise<CaseSummary> {
     return delay(this.cases[0]);
   }
 
@@ -205,11 +210,13 @@ class MockCaseWebApi implements CaseWebApi {
     return delay(this.data(caseId).subjects[index]);
   }
 
+  /** Like the real backend: deletes the subject's own evidence and unlinks it from the rest. */
   removeSubject(caseId: string, id: string): Promise<void> {
-    if (this.data(caseId).evidence.some((e) => e.subjectId === id)) {
-      return Promise.reject(new Error("This subject still has evidence. Reassign or remove it first."));
-    }
-    this.data(caseId).subjects = this.data(caseId).subjects.filter((s) => s.id !== id);
+    const data = this.data(caseId);
+    data.evidence = data.evidence
+      .filter((e) => e.subjectId !== id)
+      .map((e) => ({ ...e, involvedParties: e.involvedParties.filter((p) => p.subjectId !== id) }));
+    data.subjects = data.subjects.filter((s) => s.id !== id);
     return delay(undefined);
   }
 
@@ -258,6 +265,29 @@ class MockCaseWebApi implements CaseWebApi {
   updateSuggestionStatus(id: string, status: AiSuggestionStatus, caseId: string): Promise<void> {
     const suggestion = this.data(caseId).analysis.aiSuggestions.find((s) => s.id === id);
     if (suggestion) suggestion.status = status;
+    return delay(undefined);
+  }
+
+  private crimes = new Map<string, Crime[]>();
+
+  getCrimes(caseId: string): Promise<Crime[]> {
+    return delay([...(this.crimes.get(caseId) ?? [])]);
+  }
+
+  addCrime(caseId: string, input: CrimeInput): Promise<Crime> {
+    const created: Crime = { ...input, id: `crime-new-${nextEvidenceSeq++}` };
+    this.crimes.set(caseId, [...(this.crimes.get(caseId) ?? []), created]);
+    return delay(created);
+  }
+
+  updateCrime(caseId: string, id: string, input: CrimeInput): Promise<Crime> {
+    const updated: Crime = { ...input, id };
+    this.crimes.set(caseId, (this.crimes.get(caseId) ?? []).map((c) => (c.id === id ? updated : c)));
+    return delay(updated);
+  }
+
+  removeCrime(caseId: string, id: string): Promise<void> {
+    this.crimes.set(caseId, (this.crimes.get(caseId) ?? []).filter((c) => c.id !== id));
     return delay(undefined);
   }
 }
@@ -310,6 +340,46 @@ export function getCaseHistory(caseId: string): Promise<HistoryEntry[]> {
   return caseWebApi.getCaseHistory(caseId);
 }
 
+export interface UploadedFile {
+  /** Name the file was saved under in src/images (may differ from the original if taken). */
+  storedFileName: string;
+  /** What evidence_attachments.file_url will hold, e.g. "src/images/IMG_2660.jpg". */
+  fileUrl: string;
+  /** Where the browser can load the saved file. */
+  previewUrl: string;
+}
+
+/** Save a file into src/images on the backend. Read its metadata afterwards with readUploadedFileMetadata. */
+export function uploadFile(input: { fileName: string; fileType: string; dataUrl: string }): Promise<UploadedFile> {
+  return request<UploadedFile>("/uploads", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export interface GeocodeResult {
+  lat: number;
+  lng: number;
+  /** Full place name the geocoder matched, e.g. "Stanley Park, West End, Vancouver, …". */
+  label: string;
+}
+
+/** Look up coordinates for a place name (Google if the backend has a key, else OpenStreetMap). */
+export function geocodePlace(query: string): Promise<GeocodeResult> {
+  return request<GeocodeResult>(`/geocode?q=${encodeURIComponent(query)}`);
+}
+
+/** Read metadata from a file uploadFile already saved in src/images. */
+export function readUploadedFileMetadata(
+  storedFileName: string,
+  input: { fileName: string; fileType: string }
+): Promise<UploadedImageMetadata> {
+  return request<UploadedImageMetadata>(`/uploads/${encodeURIComponent(storedFileName)}/metadata`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function extractUploadedImageMetadata(input: {
   fileName: string;
   fileType: string;
@@ -349,8 +419,8 @@ class HttpCaseWebApi implements CaseWebApi {
     return request<void>(`/cases/${caseId}`, { method: "DELETE" });
   }
 
-  seedDemoCase(): Promise<CaseSummary> {
-    return request<CaseSummary>("/dev/seed-demo-case", {
+  seedSampleCase(): Promise<CaseSummary> {
+    return request<CaseSummary>("/dev/seed-sample-case", {
       method: "POST",
       body: JSON.stringify({}),
     });
@@ -414,17 +484,28 @@ class HttpCaseWebApi implements CaseWebApi {
     });
   }
 
-  getAnalysis(_caseId: string): Promise<CaseAnalysis> {
-    return Promise.resolve({
-      conflicts: [],
-      gaps: [],
-      corroborations: [],
-      aiSuggestions: [],
-    });
+  getAnalysis(caseId: string): Promise<CaseAnalysis> {
+    return request<CaseAnalysis>(`/cases/${caseId}/analysis`);
   }
 
   updateSuggestionStatus(_id: string, _status: AiSuggestionStatus, _caseId: string): Promise<void> {
     return Promise.reject(new Error("Saving AI suggestion decisions is not implemented yet"));
+  }
+
+  getCrimes(caseId: string): Promise<Crime[]> {
+    return request<Crime[]>(`/cases/${caseId}/crimes`);
+  }
+
+  addCrime(caseId: string, input: CrimeInput): Promise<Crime> {
+    return request<Crime>(`/cases/${caseId}/crimes`, { method: "POST", body: JSON.stringify(input) });
+  }
+
+  updateCrime(caseId: string, id: string, input: CrimeInput): Promise<Crime> {
+    return request<Crime>(`/cases/${caseId}/crimes/${id}`, { method: "PUT", body: JSON.stringify(input) });
+  }
+
+  removeCrime(caseId: string, id: string): Promise<void> {
+    return request<void>(`/cases/${caseId}/crimes/${id}`, { method: "DELETE" });
   }
 }
 

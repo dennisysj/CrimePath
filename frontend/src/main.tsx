@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner"; // ADDED line 4: global toast host for the timeline redesign (collapse/expand, path view, add-evidence feedback)
 import "./index.css";
 import { CaseWebPage } from "./features/case-web";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 
 const TestImageLocation = lazy(() =>
   import("./test/TestImageLocation").then((module) => ({
@@ -13,6 +14,7 @@ const TestImageLocation = lazy(() =>
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
+    <AppErrorBoundary>
     <BrowserRouter>
       <Routes>
         <Route
@@ -33,5 +35,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       </Routes>
       <Toaster theme="dark" position="bottom-center" duration={1600} /> {/* UPDATED line 34: theme light->dark for the high-contrast dark theme */}
     </BrowserRouter>
+    </AppErrorBoundary>
   </React.StrictMode>,
 );

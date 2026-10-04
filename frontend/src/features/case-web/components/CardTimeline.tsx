@@ -1,7 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { AnimatePresence } from "motion/react";
 import { toast } from "sonner";
-import type { CaseAnalysis, Evidence, Reliability, Subject } from "../types";
+import { Minus, Plus } from "lucide-react";
+import type { CaseAnalysis, Crime, Evidence, Reliability, Subject } from "../types";
 import type { HistoryEntry } from "../api";
 import type { Selection } from "../store";
 import { CARD_WIDTH, RULER_HEIGHT, computeCardLayout, hourKeyForEvidence, type ConnectorSpec } from "./cardLayout"; // UPDATED line 6: added RULER_HEIGHT import — needed to stop the collapsed block from painting over the ruler header
@@ -10,6 +11,7 @@ import { ConnectorLayer } from "./ConnectorLayer";
 import { EvidenceCard } from "./EvidenceCard";
 import { CollapsedHourChip } from "./CollapsedHourChip";
 import { TimeRuler } from "./TimeRuler";
+import { CrimeBandLayer } from "./CrimeBandLayer";
 import { EvidenceDetailPanel } from "./EvidenceDetailPanel"; // ADDED: restores the original bottom detail panel, rendered below the canvas inside this component (as it was before the slide-out drawer redesign)
 import { readPersisted, writePersisted } from "./persistence";
 
@@ -17,15 +19,18 @@ interface CardTimelineProps {
   caseName: string;
   subjects: Subject[];
   evidence: Evidence[];
+  /** Drawn as bands across all lanes, regardless of the subject filter. */
+  crimes: Crime[];
   analysis: CaseAnalysis;
   selection: Selection;
   newEvidenceIds: Set<string>;
   onSelectEvidence: (id: string) => void;
   onClearSelection: () => void;
   onEditEvidence: (evidence: Evidence) => void;
+  onEditCrime: (crime: Crime) => void;
   onRemoveEvidence: (id: string) => void;
   onSetReliability: (id: string, reliability: Reliability) => void;
-  /** Undefined for the demo case, which has no stored history. */
+  /** Undefined when stored history is unavailable. */
   loadHistory?: (evidenceId: string) => Promise<HistoryEntry[]>;
   onConfirmSuggestion: (id: string) => void;
   onDismissSuggestion: (id: string) => void;
@@ -56,8 +61,10 @@ function computeHighlight(selectedId: string | null, connectors: ConnectorSpec[]
   return { cardIds, connectorKeys };
 }
 
-const LANE_LABEL_COLUMN_WIDTH = 96;
+const LANE_LABEL_COLUMN_WIDTH = 112;
 const FLASH_MS = 900;
+const ZOOM_LEVELS = [0.6, 0.75, 0.9, 1, 1.15, 1.3] as const;
+const DEFAULT_ZOOM = 1;
 
 /**
  * Card-based evidence timeline: a fixed lane-label column, a horizontally
@@ -70,12 +77,14 @@ export const CardTimeline = forwardRef<CardTimelineHandle, CardTimelineProps>(fu
     caseName,
     subjects,
     evidence,
+    crimes,
     analysis,
     selection,
     newEvidenceIds,
     onSelectEvidence,
     onClearSelection,
     onEditEvidence,
+    onEditCrime,
     onRemoveEvidence,
     onSetReliability,
     loadHistory,
@@ -87,12 +96,13 @@ export const CardTimeline = forwardRef<CardTimelineHandle, CardTimelineProps>(fu
   const storageKey = `crimepath:collapsedHours:${caseName}`;
   const [collapsedHours, setCollapsedHours] = useState<Set<string>>(() => new Set(readPersisted<string[]>(storageKey, [])));
   const [flashId, setFlashId] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pendingFocusRef = useRef<string | null>(null);
 
   const layout = useMemo(
-    () => computeCardLayout(evidence, subjects, analysis, collapsedHours),
-    [evidence, subjects, analysis, collapsedHours]
+    () => computeCardLayout(evidence, subjects, analysis, collapsedHours, crimes),
+    [evidence, subjects, analysis, collapsedHours, crimes]
   );
 
   const selectedId = selection?.type === "evidence" ? selection.id : null;
@@ -109,6 +119,18 @@ export const CardTimeline = forwardRef<CardTimelineHandle, CardTimelineProps>(fu
       const section = layout.sections.find((s) => s.key === key);
       toast(wasCollapsed ? `Expanded ${section?.label ?? "hour"}` : `Collapsed ${section?.label ?? "hour"}`);
       return next;
+    });
+  }
+
+  const zoomIndex = ZOOM_LEVELS.findIndex((level) => level === zoom);
+  const canZoomOut = zoomIndex > 0;
+  const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1;
+
+  function changeZoom(direction: -1 | 1) {
+    setZoom((current) => {
+      const currentIndex = ZOOM_LEVELS.findIndex((level) => level === current);
+      const nextIndex = Math.min(Math.max(currentIndex + direction, 0), ZOOM_LEVELS.length - 1);
+      return ZOOM_LEVELS[nextIndex];
     });
   }
 
@@ -131,29 +153,70 @@ export const CardTimeline = forwardRef<CardTimelineHandle, CardTimelineProps>(fu
     if (!pos) return; // still mid-expand; the next layout pass will have it
     const el = scrollRef.current;
     if (el) {
-      const targetScrollLeft = pos.x - el.clientWidth / 2 + CARD_WIDTH / 2;
+      const targetScrollLeft = (pos.x + CARD_WIDTH / 2) * zoom - el.clientWidth / 2;
       el.scrollTo({ left: Math.max(0, targetScrollLeft), behavior: "smooth" });
     }
     setFlashId(id);
     const t = setTimeout(() => setFlashId(null), FLASH_MS);
     pendingFocusRef.current = null;
     return () => clearTimeout(t);
-  }, [layout]);
+  }, [layout, zoom]);
 
   return (
     // UPDATED line 119: was a height:"100%"/minHeight:layout.canvasHeight flex row that force-filled the
     // viewport (so a slide-out drawer could overlay it) — restored to the original's natural-height
     // "space-y-4" column, with the canvas on top and the (now restored) bottom detail panel below it.
     <div className="space-y-4">
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => changeZoom(-1)}
+          disabled={!canZoomOut}
+          title="Zoom out timeline"
+          aria-label="Zoom out timeline"
+          className="rounded border border-neutral-700 p-1.5 text-neutral-300 hover:border-neutral-500 hover:text-white disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600"
+        >
+          <Minus size={14} />
+        </button>
+        <span className="w-12 text-center font-mono text-xs text-neutral-500">{Math.round(zoom * 100)}%</span>
+        <button
+          type="button"
+          onClick={() => changeZoom(1)}
+          disabled={!canZoomIn}
+          title="Zoom in timeline"
+          aria-label="Zoom in timeline"
+          className="rounded border border-neutral-700 p-1.5 text-neutral-300 hover:border-neutral-500 hover:text-white disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600"
+        >
+          <Plus size={14} />
+        </button>
+      </div>
       <div className="flex overflow-hidden rounded-md" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-        <div className="relative flex-shrink-0" style={{ width: LANE_LABEL_COLUMN_WIDTH, borderRight: "1px solid var(--border)" }}>
-          {subjects.map((s) => (
-            <LaneLabel key={s.id} subject={s} subjects={subjects} y={layout.laneY.get(s.id) ?? 0} />
-          ))}
+        <div
+          className="relative flex-shrink-0"
+          style={{ width: LANE_LABEL_COLUMN_WIDTH * zoom, height: layout.canvasHeight * zoom, borderRight: "1px solid var(--border)" }}
+        >
+          <div
+            className="relative"
+            style={{
+              width: LANE_LABEL_COLUMN_WIDTH,
+              height: layout.canvasHeight,
+              transform: `scale(${zoom})`,
+              transformOrigin: "top left",
+            }}
+          >
+            {subjects.map((s) => (
+              <LaneLabel key={s.id} subject={s} subjects={subjects} y={layout.laneY.get(s.id) ?? 0} />
+            ))}
+          </div>
         </div>
 
         <div ref={scrollRef} className="thin-scrollbar relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
-          <div className="relative" style={{ width: layout.canvasWidth, height: layout.canvasHeight }} onClick={onClearSelection}>
+          <div className="relative" style={{ width: layout.canvasWidth * zoom, height: layout.canvasHeight * zoom }}>
+          <div
+            className="relative"
+            style={{ width: layout.canvasWidth, height: layout.canvasHeight, transform: `scale(${zoom})`, transformOrigin: "top left" }}
+            onClick={onClearSelection}
+          >
             {layout.sections.map((s, i) =>
               i % 2 === 1 ? (
                 <div
@@ -219,6 +282,9 @@ export const CardTimeline = forwardRef<CardTimelineHandle, CardTimelineProps>(fu
                 ))}
             </AnimatePresence>
 
+            {/* Above collapsed-hour blocks (so a crime line inside a collapsed hour still shows), below the cards. */}
+            <CrimeBandLayer bands={layout.crimeBands} canvasHeight={layout.canvasHeight} onSelectCrime={onEditCrime} />
+
             <AnimatePresence>
               {evidence.map((e) => {
                 const pos = layout.positions.get(e.id);
@@ -248,6 +314,7 @@ export const CardTimeline = forwardRef<CardTimelineHandle, CardTimelineProps>(fu
                 />
               ))}
             </AnimatePresence>
+          </div>
           </div>
         </div>
       </div>

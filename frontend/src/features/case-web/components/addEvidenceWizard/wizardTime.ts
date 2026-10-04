@@ -1,3 +1,4 @@
+import { formatDateTime } from "../../timeUtils";
 import type { ClockValue, WizardDraft } from "./wizardTypes";
 
 export function isClockComplete(clock: ClockValue, withSeconds: boolean): boolean {
@@ -28,60 +29,35 @@ export function clockToDate(dateStr: string, clock: ClockValue): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** 12-hour display, e.g. "9:45 AM". */
-export function formatClockDate(d: Date): string {
-  let h = d.getUTCHours();
-  const period = h >= 12 ? "PM" : "AM";
-  h = h % 12;
-  if (h === 0) h = 12;
-  const m = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${h}:${m} ${period}`;
+function formatDraftDateTime(dateStr: string, clock: ClockValue): string {
+  const date = clockToDate(dateStr, clock);
+  return date ? formatDateTime(date.toISOString()) : dateStr;
 }
 
-/** Live preview for the Approximate mode, e.g. "9:45 AM to 10:15 AM". */
+/** Live preview for the Approximate mode, e.g. "2026-10-03 09:45:00 to 2026-10-03 10:15:00". */
 export function approximateWindowPreview(draft: WizardDraft): string | null {
   const center = clockToDate(draft.date, draft.approxTime);
   const margin = Number(draft.approxMarginMinutes);
   if (!center || !Number.isFinite(margin) || margin <= 0) return null;
   const earliest = new Date(center.getTime() - margin * 60_000);
   const latest = new Date(center.getTime() + margin * 60_000);
-  return `${formatClockDate(earliest)} to ${formatClockDate(latest)}`;
+  return `${formatDateTime(earliest.toISOString())} to ${formatDateTime(latest.toISOString())}`;
 }
 
-function formatClockValueDisplay(clock: ClockValue, withSeconds: boolean): string {
-  if (!clock.hour || !clock.minute) return "";
-  const sec = withSeconds ? `:${(clock.second || "00").padStart(2, "0")}` : "";
-  return `${clock.hour}:${clock.minute.padStart(2, "0")}${sec} ${clock.period}`;
-}
-
-const MONTH_NAMES = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-/** "2026-10-03" -> "Oct 3, 2026", read as plain digits (no timezone parsing). */
-export function formatDateLabel(dateStr: string): string {
-  if (!dateStr) return "";
-  const [y, m, d] = dateStr.split("-").map(Number);
-  if (!y || !m || !d) return "";
-  return `${MONTH_NAMES[m - 1]} ${d}, ${y}`;
-}
-
-/** One-line "formatted time" summary for the step 3 summary card, across all three When modes. */
+/** One-line formatted time summary for the step 3 summary card, across all three When modes. */
 export function summarizeWhen(draft: WizardDraft): string {
-  const dateLabel = formatDateLabel(draft.date);
-  if (!dateLabel) return "";
+  if (!draft.date) return "";
 
   if (draft.certainty === "exact") {
-    return `${formatClockValueDisplay(draft.exactTime, true)} · ${dateLabel}`;
+    return formatDraftDateTime(draft.date, draft.exactTime);
   }
   if (draft.certainty === "approximate") {
-    const preview = approximateWindowPreview(draft);
-    return preview ? `${preview} · ${dateLabel}` : `${formatClockValueDisplay(draft.approxTime, false)} · ${dateLabel}`;
+    return approximateWindowPreview(draft) ?? formatDraftDateTime(draft.date, draft.approxTime);
   }
   if (draft.certainty === "range") {
-    return `${formatClockValueDisplay(draft.rangeStart, false)} – ${formatClockValueDisplay(draft.rangeEnd, false)} · ${dateLabel}`;
+    return `${formatDraftDateTime(draft.date, draft.rangeStart)} - ${formatDraftDateTime(draft.date, draft.rangeEnd)}`;
   }
-  return dateLabel;
+  return draft.date;
 }
 
 export function isStep2Valid(draft: WizardDraft): boolean {

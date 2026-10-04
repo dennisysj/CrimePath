@@ -98,6 +98,22 @@ export interface Evidence {
 }
 
 /**
+ * The offence itself: when and where the crime happened. Not evidence and
+ * not tied to a subject — the timeline draws it as a band across every lane
+ * so investigators can see which evidence falls inside the crime window.
+ */
+export interface Crime {
+  id: string;
+  title: string;
+  description: string;
+  /** ISO string. When the crime started (or the single moment it happened). */
+  start: string;
+  /** ISO string, or null for a single point in time / unknown end. */
+  end: string | null;
+  location: EvidenceLocation;
+}
+
+/**
  * A travel/time feasibility conflict between two pieces of evidence for the
  * same subject, as computed by the (future) deterministic engine.
  *

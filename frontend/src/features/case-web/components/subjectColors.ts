@@ -7,7 +7,7 @@ import type { Subject } from "../types";
  */
 export const SUBJECT_PALETTE: { bg: string; text: string }[] = [
   { bg: "#4A6A8F", text: "#FFFFFF" }, // UPDATED line 9: was #3E5675 — brightened for the dark theme
-  { bg: "#A85A6C", text: "#FFFFFF" }, // UPDATED line 10: was #9C5263
+  { bg: "#7E6BB0", text: "#FFFFFF" }, // was #A85A6C — a rose that read as conflict red, esp. on the event path map
   { bg: "#D9A441", text: "#2A1D05" }, // unchanged
   { bg: "#2F8A9A", text: "#FFFFFF" }, // UPDATED line 12: was #2F7A8A
   { bg: "#8A7A66", text: "#FFFFFF" }, // UPDATED line 13: was #7A6A58

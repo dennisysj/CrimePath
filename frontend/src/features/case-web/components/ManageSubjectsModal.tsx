@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { Loader2, Trash2, X } from "lucide-react";
 import type { Evidence, Subject, SubjectKind } from "../types";
-import type { HistoryEntry, SubjectInput } from "../api";
-import { HistoryList } from "./HistoryList";
+import type { SubjectInput } from "../api";
 
 interface ManageSubjectsModalProps {
   subjects: Subject[];
@@ -11,8 +10,6 @@ interface ManageSubjectsModalProps {
   onAdd: (input: SubjectInput) => Promise<Subject>;
   onUpdate: (id: string, input: Partial<SubjectInput>) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
-  /** Undefined for the demo case, which has no stored history. */
-  loadHistory?: () => Promise<HistoryEntry[]>;
 }
 
 const SUBJECT_KINDS: SubjectKind[] = ["person", "vehicle", "phone", "other"];
@@ -38,7 +35,6 @@ export function ManageSubjectsModal({
   onAdd,
   onUpdate,
   onRemove,
-  loadHistory,
 }: ManageSubjectsModalProps) {
   const [newName, setNewName] = useState("");
   const [newKind, setNewKind] = useState<SubjectKind>("person");
@@ -46,7 +42,13 @@ export function ManageSubjectsModal({
   const [error, setError] = useState("");
 
   const evidenceCount = new Map<string, number>();
-  evidence.forEach((e) => evidenceCount.set(e.subjectId, (evidenceCount.get(e.subjectId) ?? 0) + 1));
+  const involvedCount = new Map<string, number>();
+  evidence.forEach((e) => {
+    evidenceCount.set(e.subjectId, (evidenceCount.get(e.subjectId) ?? 0) + 1);
+    (e.involvedParties ?? []).forEach((p) => {
+      if (p.subjectId !== e.subjectId) involvedCount.set(p.subjectId, (involvedCount.get(p.subjectId) ?? 0) + 1);
+    });
+  });
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -88,6 +90,7 @@ export function ManageSubjectsModal({
               key={s.id}
               subject={s}
               count={evidenceCount.get(s.id) ?? 0}
+              involvedIn={involvedCount.get(s.id) ?? 0}
               onUpdate={onUpdate}
               onRemove={onRemove}
               onError={setError}
@@ -130,11 +133,8 @@ export function ManageSubjectsModal({
 
         {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
 
-        {loadHistory && (
-          <div className="mt-4 border-t border-neutral-800 pt-3">
-            <HistoryList load={loadHistory} reloadKey={subjects} subjects={subjects} title="Case history" />
-          </div>
-        )}
+        {/* No history here: case history lives in the Edit case window, and subject changes aren't recorded
+            (only the UPDATE triggers in schema.sql write history). */}
       </div>
     </div>
   );
@@ -143,12 +143,15 @@ export function ManageSubjectsModal({
 function SubjectRow({
   subject,
   count,
+  involvedIn,
   onUpdate,
   onRemove,
   onError,
 }: {
   subject: Subject;
   count: number;
+  /** Other subjects' items this subject is only "also involved" in. */
+  involvedIn: number;
   onUpdate: (id: string, input: Partial<SubjectInput>) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
   onError: (message: string) => void;
@@ -158,6 +161,12 @@ function SubjectRow({
   const [busy, setBusy] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const dirty = name.trim() !== subject.name || kind !== subject.kind;
+  const deleteConsequence = [
+    count > 0 ? `deletes ${count} evidence item${count === 1 ? "" : "s"}` : null,
+    involvedIn > 0 ? `unlinks from ${involvedIn} other${involvedIn === 1 ? "" : "s"}` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   async function run(action: () => Promise<void>, fallback: string) {
     setBusy(true);
@@ -212,10 +221,11 @@ function SubjectRow({
         </button>
       ) : confirmingDelete ? (
         <span className="flex items-center gap-1">
+          {deleteConsequence && <span className="text-[10px] text-red-400">Also {deleteConsequence}.</span>}
           <button
             type="button"
             onClick={() => run(() => onRemove(subject.id), "Couldn't delete.").then(() => setConfirmingDelete(false))}
-            className="rounded bg-red-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-red-500"
+            className="whitespace-nowrap rounded bg-red-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-red-500"
           >
             Delete
           </button>
@@ -231,8 +241,7 @@ function SubjectRow({
         <button
           type="button"
           onClick={() => setConfirmingDelete(true)}
-          disabled={count > 0}
-          title={count > 0 ? "Reassign or remove this subject's evidence before deleting it" : "Delete subject"}
+          title={count > 0 ? `Delete subject and its ${count} evidence item${count === 1 ? "" : "s"}` : "Delete subject"}
           aria-label="Delete subject"
           className="rounded p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-neutral-500"
         >

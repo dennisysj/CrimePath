@@ -10,6 +10,7 @@ import { summarizeWhen } from "./wizardTime";
 import { hasTimeOrLocation, metadataSummary } from "./photoMetadata";
 
 export type AttachmentMetadataStatus =
+  | { state: "saving" }
   | { state: "loading" }
   | { state: "done"; metadata: UploadedImageMetadata }
   | { state: "error"; message: string };
@@ -252,10 +253,11 @@ export function StepUploads({
 
 function MetadataLine({ status, onApply }: { status: AttachmentMetadataStatus | undefined; onApply: () => void }) {
   if (!status) return null;
-  if (status.state === "loading") {
+  if (status.state === "saving" || status.state === "loading") {
     return (
       <p className="flex items-center gap-1 text-[10px] text-neutral-500">
-        <Loader2 size={10} className="animate-spin" /> Reading photo metadata…
+        <Loader2 size={10} className="animate-spin" />{" "}
+        {status.state === "saving" ? "Saving to src/images…" : "Reading photo metadata…"}
       </p>
     );
   }

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { FileText, Paperclip, Pencil, Trash2 } from "lucide-react";
 import type { AiSuggestion, CaseAnalysis, Evidence, Subject } from "../types";
 import type { Selection } from "../store";
-import { formatClock, formatClockWithSeconds } from "../timeUtils";
+import { formatDateTime } from "../timeUtils";
 import { formatBytes } from "../attachmentUtils";
 import { formatLocationLabel } from "../locationUtils";
 
@@ -54,7 +54,7 @@ export function DetailsPanel({
     const e = evidenceById.get(id);
     if (!e) return id;
     const subject = subjectById.get(e.subjectId);
-    return `${subject?.name ?? "?"} · ${formatClock(e.eventTime)}`;
+    return `${subject?.name ?? "?"} - ${formatDateTime(e.eventTime, true)}`;
   }
 
   const relatedConflicts = selectedEvidence
@@ -103,10 +103,10 @@ export function DetailsPanel({
               label="Time"
               value={
                 selectedEvidence.timeCertainty === "exact"
-                  ? formatClockWithSeconds(selectedEvidence.eventTime)
-                  : `${formatClock(selectedEvidence.earliestPossibleTime)}–${formatClock(
+                  ? formatDateTime(selectedEvidence.eventTime, true)
+                  : `${formatDateTime(selectedEvidence.earliestPossibleTime)} - ${formatDateTime(
                       selectedEvidence.latestPossibleTime
-                    )} (reported ${formatClock(selectedEvidence.eventTime)})`
+                    )} (reported ${formatDateTime(selectedEvidence.eventTime)})`
               }
             />
             <Row
@@ -208,7 +208,7 @@ export function DetailsPanel({
                 {subjectById.get(g.subjectId)?.name ?? "Unknown"} — {Math.round(g.durationMinutes)} min unaccounted
               </p>
               <p className="mt-0.5 font-mono text-[10px] text-neutral-600">
-                {formatClock(g.start)} – {formatClock(g.end)}
+                {formatDateTime(g.start)} - {formatDateTime(g.end)}
               </p>
             </div>
           ))}
@@ -232,9 +232,9 @@ export function DetailsPanel({
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex gap-2">
-      <dt className="w-16 flex-shrink-0 text-neutral-600">{label}</dt>
-      <dd className="text-neutral-300">{value}</dd>
+    <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
+      <dt className="text-neutral-600">{label}</dt>
+      <dd className="min-w-0 break-words text-neutral-300">{value}</dd>
     </div>
   );
 }

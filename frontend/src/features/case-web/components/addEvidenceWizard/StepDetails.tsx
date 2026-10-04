@@ -5,6 +5,7 @@ import { ROLE_LABELS } from "../../types"; // ADDED: role dropdown labels for in
 import { SOURCE_OPTIONS, type ClockPeriod, type ClockValue, type WizardDraft } from "./wizardTypes";
 import { approximateWindowPreview } from "./wizardTime";
 import { LocationCombobox, type LocationStat } from "./LocationCombobox";
+import { LocationCoordinates } from "./LocationCoordinates";
 import { TimeWheelPicker } from "./TimeWheelPicker";
 import type { AttachmentMetadataStatus } from "./StepUploads";
 import { metadataSummary } from "./photoMetadata";
@@ -145,9 +146,10 @@ export function StepDetails({
           <Camera size={13} />
           Fill time &amp; location from a photo
         </button>
-        {photoStatus?.state === "loading" && (
+        {(photoStatus?.state === "saving" || photoStatus?.state === "loading") && (
           <p className="mt-1 flex items-center gap-1 text-[11px] text-neutral-500">
-            <Loader2 size={10} className="animate-spin" /> Reading photo metadata…
+            <Loader2 size={10} className="animate-spin" />{" "}
+            {photoStatus.state === "saving" ? "Saving photo to src/images…" : "Reading photo metadata…"}
           </p>
         )}
         {photoStatus?.state === "done" && (
@@ -401,6 +403,12 @@ export function StepDetails({
           locationStats={locationStats}
           onChange={(name, lat, lng) => onChangeDraft({ locationName: name, locationLat: lat, locationLng: lng })}
         />
+        <LocationCoordinates
+          locationName={draft.locationName}
+          lat={draft.locationLat}
+          lng={draft.locationLng}
+          onChange={(lat, lng) => onChangeDraft({ locationLat: lat, locationLng: lng })}
+        />
       </div>
     </div>
   );
@@ -413,7 +421,7 @@ interface ClockFieldsProps {
 }
 
 /** h:mm[:ss] typed inputs + an AM/PM toggle. Shared by exact/approximate/range. */
-function ClockFields({ value, onChange, withSeconds }: ClockFieldsProps) {
+export function ClockFields({ value, onChange, withSeconds }: ClockFieldsProps) {
   function clampNumeric(raw: string, max: number): string {
     const digits = raw.replace(/\D/g, "").slice(0, 2);
     if (digits === "") return "";

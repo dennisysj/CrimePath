@@ -3,7 +3,7 @@ import type { UploadedImageMetadata } from "../../api";
 import { EMPTY_CLOCK, type ClockValue, type WizardDraft } from "./wizardTypes";
 import { isClockComplete } from "./wizardTime";
 
-/** Attachments are stored inline (as data URLs) in the evidence record, so cap their size. */
+/** Uploads travel to the backend as base64 JSON, so cap their size. */
 export const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 
 let attachmentSeq = 1;
@@ -18,8 +18,9 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 /**
- * previewUrl is a data URL rather than an object URL so it survives being
- * saved to the database and reloaded later.
+ * Read a picked file as a data URL. It is shown as the preview until the
+ * backend has saved it to src/images (see AddEvidenceModal.handleAddFiles),
+ * after which previewUrl points at the saved file.
  */
 export function fileToAttachment(file: File): Promise<EvidenceAttachment> {
   return readFileAsDataUrl(file).then((previewUrl) => ({

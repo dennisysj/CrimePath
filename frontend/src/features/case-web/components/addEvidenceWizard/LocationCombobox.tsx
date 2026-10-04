@@ -22,7 +22,7 @@ const inputClass =
  * Typing filters locations already used in this case; picking one reuses
  * its coordinates. Typing something new offers to add it — looking up
  * KNOWN_LOCATIONS for coordinates if the name matches, otherwise saving
- * without lat/lng. Never shows raw lat/lng inputs.
+ * without lat/lng. Coordinates are edited separately in LocationCoordinates.
  */
 export function LocationCombobox({ value, locationStats, onChange }: LocationComboboxProps) {
   const [open, setOpen] = useState(false);

@@ -2,7 +2,7 @@ import { ExternalLink, MapPin } from "lucide-react";
 import { MapPreview } from "../../../components/MapPreview";
 import { buildGoogleMapsLocationUrl } from "../../../utils/googleMaps";
 import { getEvidenceCoordinates, locationSourceLabel } from "../locationUtils";
-import { formatClockWithSeconds } from "../timeUtils";
+import { formatDateTime } from "../timeUtils";
 import type { Evidence } from "../types";
 
 /** "Location" section of the evidence detail panel. Renders a map only when the evidence has a valid lat/lng pair. */
@@ -20,7 +20,7 @@ export function EvidenceLocationMap({ evidence }: { evidence: Evidence }) {
           <div>
             <p className="mb-1.5 text-sm" style={{ color: "var(--text)" }}>{evidence.location.name}</p>
             <dl className="space-y-1 font-mono text-xs">
-              <Field label="Time" value={formatClockWithSeconds(evidence.eventTime)} />
+              <Field label="Time" value={formatDateTime(evidence.eventTime, true)} />
               <Field label="Lat" value={coords.lat.toFixed(6)} />
               <Field label="Lng" value={coords.lng.toFixed(6)} />
               <Field label="Source" value={locationSourceLabel(evidence)} />

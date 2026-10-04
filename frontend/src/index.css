@@ -23,6 +23,7 @@
   --conflict-ring: #ff5a5f; /* UPDATED line 22: was #e24b4a */
   --linked: #27500a;
   --ai: #3c3489;
+  --crime: #f5b301; /* crime window bands on the timeline: crime-scene-tape amber, distinct from conflict red */
 }
 
 body {

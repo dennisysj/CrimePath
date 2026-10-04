@@ -17,3 +17,25 @@ export async function extractEvidenceDraft(text: string): Promise<ExtractEvidenc
   }
   return res.json();
 }
+
+export interface ExtractCrimeResponse {
+  title: string;
+  description: string;
+  locationName: string;
+  /** Wall-clock ISO ("…Z"), like the rest of the timeline. */
+  start: string;
+  end: string | null;
+}
+
+export async function extractCrimeDraft(text: string): Promise<ExtractCrimeResponse> {
+  const res = await fetch(`${API_URL}/extract-crime`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `Extraction failed (${res.status})`);
+  }
+  return res.json();
+}

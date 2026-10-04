@@ -57,6 +57,20 @@ export function formatClockWithSeconds(iso: string): string {
   return `${formatClock(iso)}:${ss}`;
 }
 
+/** YYYY-MM-DD, reading the ISO string's own digits. */
+export function formatDate(iso: string): string {
+  const d = new Date(iso);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/** YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS. */
+export function formatDateTime(iso: string, includeSeconds = true): string {
+  return `${formatDate(iso)} ${includeSeconds ? formatClockWithSeconds(iso) : formatClock(iso)}`;
+}
+
 // ADDED: shared with the time ruler, so tick labels always read exactly like the card's own time (seconds for exact, "~" for approximate) instead of a separately-rounded label.
 export interface TimedEvidenceLike {
   timeCertainty: "exact" | "approximate" | "range";
@@ -66,7 +80,7 @@ export interface TimedEvidenceLike {
 }
 
 export function formatEvidenceTimeLabel(e: TimedEvidenceLike): string {
-  if (e.timeCertainty === "exact") return formatClockWithSeconds(e.eventTime);
-  if (e.timeCertainty === "range") return `${formatClock(e.earliestPossibleTime)}–${formatClock(e.latestPossibleTime)}`;
-  return `~${formatClock(e.eventTime)}`;
+  if (e.timeCertainty === "exact") return formatDateTime(e.eventTime, true);
+  if (e.timeCertainty === "range") return `${formatDateTime(e.earliestPossibleTime)} - ${formatDateTime(e.latestPossibleTime)}`;
+  return `~${formatDateTime(e.eventTime)}`;
 }
