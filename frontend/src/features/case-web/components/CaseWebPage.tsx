@@ -193,7 +193,7 @@ export function CaseWebPage() {
           <div className="cover-mascot" aria-hidden="true">
             <img className="cover-mascot-image" src={inquisitorImage} alt="" />
           </div>
-          <h1 className="mb-6 text-center text-4xl font-semibold tracking-tight sm:text-5xl">CrimePath</h1>
+          <h1 className="mb-6 text-center text-4xl font-semibold tracking-tight sm:text-5xl">CRIMEPath</h1>
           <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5" aria-label="Case selection">
           {error && (
             <div className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
