@@ -54,8 +54,13 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => ({
 
   addEvidence: async (input) => {
     const created = await caseWebApi.addEvidence(input);
+    // Conflicts/gaps can depend on the new evidence (the real backend
+    // recomputes them server-side on add), so refetch analysis alongside it
+    // - this was a no-op under the old static mock data, but matters now.
+    const analysis = await caseWebApi.getAnalysis();
     set((state) => ({
       evidence: [...state.evidence, created],
+      analysis,
       newEvidenceIds: new Set(state.newEvidenceIds).add(created.id),
     }));
     setTimeout(() => {
@@ -76,8 +81,10 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => ({
 
   removeEvidence: async (id) => {
     await caseWebApi.removeEvidence(id);
+    const analysis = await caseWebApi.getAnalysis();
     set((state) => ({
       evidence: state.evidence.filter((e) => e.id !== id),
+      analysis,
       selection: state.selection?.type === "evidence" && state.selection.id === id ? null : state.selection,
     }));
   },

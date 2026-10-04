@@ -96,8 +96,59 @@ class MockCaseWebApi implements CaseWebApi {
   }
 }
 
-// TODO: swap this for an HttpCaseWebApi implementing the same CaseWebApi
-// interface (fetch against import.meta.env.VITE_API_URL) once the backend
-// endpoints exist. Everything in this feature consumes `caseWebApi`
-// through the interface above, so that swap should only touch this file.
-export const caseWebApi: CaseWebApi = new MockCaseWebApi();
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `Request failed (${res.status})`);
+  }
+  return res.status === 204 ? (undefined as T) : res.json();
+}
+
+/** Talks to the real backend (backend/src/index.ts + store.ts). */
+class HttpCaseWebApi implements CaseWebApi {
+  async getCaseName(): Promise<string> {
+    const { caseName } = await request<{ caseName: string }>("/case-name");
+    return caseName;
+  }
+
+  getSubjects(): Promise<Subject[]> {
+    return request("/subjects");
+  }
+
+  addSubject(input: Omit<Subject, "id">): Promise<Subject> {
+    return request("/subjects", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  getEvidence(): Promise<Evidence[]> {
+    return request("/evidence");
+  }
+
+  addEvidence(input: Omit<Evidence, "id">): Promise<Evidence> {
+    return request("/evidence", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  removeEvidence(id: string): Promise<void> {
+    return request(`/evidence/${id}`, { method: "DELETE" });
+  }
+
+  getAnalysis(): Promise<CaseAnalysis> {
+    return request("/analysis");
+  }
+
+  updateSuggestionStatus(id: string, status: AiSuggestionStatus): Promise<void> {
+    return request(`/suggestions/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+  }
+}
+
+// VITE_USE_MOCK (see .env.example) switches between the two - "true" runs
+// entirely in-browser with no backend needed, anything else hits the real
+// API above. Everything in this feature consumes `caseWebApi` through the
+// CaseWebApi interface, so this is the only place that needs to know which.
+export const caseWebApi: CaseWebApi =
+  import.meta.env.VITE_USE_MOCK === "true" ? new MockCaseWebApi() : new HttpCaseWebApi();

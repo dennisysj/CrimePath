@@ -1,10 +1,10 @@
 // Replaces the old single-screen Add Evidence form with a 3-step wizard
-// (Source -> Details -> Uploads). This is a full rewrite rather than a
-// patch, so per review it's not annotated line-by-line against the old
-// file — see git history for the previous version.
+// (Source -> Details -> Uploads). Gemini extraction fills that draft so the
+// investigator can still review every field before submitting.
 import { useEffect, useMemo, useState } from "react";
 import { Check } from "lucide-react";
 import type { Evidence, EvidenceType, Subject, SubjectKind } from "../types";
+import { extractEvidenceDraft } from "../extractApi";
 import { StepSource } from "./addEvidenceWizard/StepSource";
 import { StepDetails } from "./addEvidenceWizard/StepDetails";
 import { StepUploads } from "./addEvidenceWizard/StepUploads";
@@ -12,7 +12,9 @@ import type { LocationStat } from "./addEvidenceWizard/LocationCombobox";
 import {
   DEFAULT_CERTAINTY_FOR_SOURCE,
   EMPTY_DRAFT,
+  SOURCE_OPTIONS,
   STEP_LABELS,
+  type ClockValue,
   type WizardDraft,
   type WizardStep,
 } from "./addEvidenceWizard/wizardTypes";
@@ -29,6 +31,30 @@ interface AddEvidenceModalProps {
 }
 
 const ALL_STEPS: WizardStep[] = [1, 2, 3];
+const WIZARD_EVIDENCE_TYPES = new Set<string>(SOURCE_OPTIONS.map((option) => option.type));
+
+function asWizardType(value: string | undefined): EvidenceType | null {
+  if (value && WIZARD_EVIDENCE_TYPES.has(value)) return value as EvidenceType;
+  return null;
+}
+
+function isoToDateAndClock(iso: string): { date: string; clock: ClockValue } | null {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  let hour = parsed.getUTCHours();
+  const period: ClockValue["period"] = hour >= 12 ? "PM" : "AM";
+  hour = hour % 12;
+  if (hour === 0) hour = 12;
+  return {
+    date: parsed.toISOString().slice(0, 10),
+    clock: {
+      hour: String(hour),
+      minute: String(parsed.getUTCMinutes()).padStart(2, "0"),
+      second: String(parsed.getUTCSeconds()).padStart(2, "0"),
+      period,
+    },
+  };
+}
 
 export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, onAddSubject }: AddEvidenceModalProps) {
   const [step, setStep] = useState<WizardStep>(1);
@@ -38,6 +64,11 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submittedAttachmentCount, setSubmittedAttachmentCount] = useState(0);
+  const [showDraftBox, setShowDraftBox] = useState(false);
+  const [draftText, setDraftText] = useState("");
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
+  const [draftSubjectName, setDraftSubjectName] = useState<string | null>(null);
 
   // Re-trigger the slide-in transition every time the step changes: render
   // at the offset position first, then flip to "entered" next frame so the
@@ -50,11 +81,11 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
 
   const locationStats = useMemo<LocationStat[]>(() => {
     const byName = new Map<string, LocationStat>();
-    evidence.forEach((e) => {
-      const key = e.location.name.toLowerCase();
+    evidence.forEach((item) => {
+      const key = item.location.name.toLowerCase();
       const existing = byName.get(key);
       if (existing) existing.count += 1;
-      else byName.set(key, { name: e.location.name, lat: e.location.lat, lng: e.location.lng, count: 1 });
+      else byName.set(key, { name: item.location.name, lat: item.location.lat, lng: item.location.lng, count: 1 });
     });
     return Array.from(byName.values()).sort((a, b) => b.count - a.count);
   }, [evidence]);
@@ -67,11 +98,15 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
     // (After a successful submit, draft.attachments is already emptied —
     // see handleSubmit — so this is a no-op there; it only fires for real
     // when the modal is abandoned before submitting.)
-    draft.attachments.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+    draft.attachments.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl));
     setStep(1);
     setDirection("forward");
     setSlideEntered(true);
     setDraft(EMPTY_DRAFT);
+    setShowDraftBox(false);
+    setDraftText("");
+    setExtractError(null);
+    setDraftSubjectName(null);
   }
 
   function handleClose() {
@@ -85,23 +120,86 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
     setSubmitted(false);
   }
 
+  async function handleExtract() {
+    if (!draftText.trim()) return;
+    setExtracting(true);
+    setExtractError(null);
+    try {
+      const { evidence: extracted, extractedSubjectName, extractedLocationName } = await extractEvidenceDraft(draftText);
+      const patch: Partial<WizardDraft> = {};
+      const evidenceType = asWizardType(extracted.evidenceType);
+
+      if (evidenceType) {
+        patch.evidenceType = evidenceType;
+        patch.certainty = extracted.timeCertainty ?? DEFAULT_CERTAINTY_FOR_SOURCE[evidenceType];
+      } else if (extracted.timeCertainty) {
+        patch.certainty = extracted.timeCertainty;
+      }
+
+      if (extractedLocationName) patch.locationName = extractedLocationName;
+
+      const noteParts = [extracted.event, extracted.notes].filter((part): part is string => Boolean(part));
+      if (noteParts.length > 0) patch.notes = noteParts.join("\n");
+
+      if (extracted.timeCertainty === "exact" && extracted.eventTime) {
+        const parsed = isoToDateAndClock(extracted.eventTime);
+        if (parsed) {
+          patch.date = parsed.date;
+          patch.exactTime = parsed.clock;
+          patch.certainty = "exact";
+        }
+      } else if (extracted.timeCertainty === "approximate" && extracted.eventTime && extracted.latestPossibleTime) {
+        const parsed = isoToDateAndClock(extracted.eventTime);
+        if (parsed) {
+          patch.date = parsed.date;
+          patch.approxTime = { ...parsed.clock, second: "00" };
+          const marginMs = new Date(extracted.latestPossibleTime).getTime() - new Date(extracted.eventTime).getTime();
+          patch.approxMarginMinutes = String(Math.max(1, Math.round(Math.abs(marginMs) / 60_000)));
+          patch.certainty = "approximate";
+        }
+      } else if (extracted.timeCertainty === "range" && extracted.earliestPossibleTime && extracted.latestPossibleTime) {
+        const start = isoToDateAndClock(extracted.earliestPossibleTime);
+        const end = isoToDateAndClock(extracted.latestPossibleTime);
+        if (start && end) {
+          patch.date = start.date;
+          patch.rangeStart = { ...start.clock, second: "00" };
+          patch.rangeEnd = { ...end.clock, second: "00" };
+          patch.certainty = "range";
+        }
+      }
+
+      setDraftSubjectName(extractedSubjectName ?? null);
+      const match = extractedSubjectName
+        ? subjects.find((subject) => subject.name.toLowerCase() === extractedSubjectName.toLowerCase())
+        : undefined;
+      if (match) patch.subjectId = match.id;
+
+      setDraft((current) => ({ ...current, ...patch }));
+      if (patch.evidenceType && step === 1) goTo(2, "forward");
+    } catch (err) {
+      setExtractError(err instanceof Error ? err.message : "Extraction failed.");
+    } finally {
+      setExtracting(false);
+    }
+  }
+
   function goTo(next: WizardStep, dir: "forward" | "back") {
     setDirection(dir);
     setStep(next);
   }
 
   function handleSelectSource(type: EvidenceType) {
-    setDraft((d) => {
+    setDraft((current) => {
       // Changing the source only re-applies the When default — everything
       // else already typed in stays put.
-      const certainty = d.evidenceType === type ? d.certainty : DEFAULT_CERTAINTY_FOR_SOURCE[type];
-      return { ...d, evidenceType: type, certainty };
+      const certainty = current.evidenceType === type ? current.certainty : DEFAULT_CERTAINTY_FOR_SOURCE[type];
+      return { ...current, evidenceType: type, certainty };
     });
     goTo(2, "forward");
   }
 
   function patchDraft(patch: Partial<WizardDraft>) {
-    setDraft((d) => ({ ...d, ...patch }));
+    setDraft((current) => ({ ...current, ...patch }));
   }
 
   async function handleAddSubject(name: string, kind: SubjectKind) {
@@ -109,7 +207,7 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
   }
 
   async function handleSubmit() {
-    const subjectName = subjects.find((s) => s.id === draft.subjectId)?.name ?? "the subject";
+    const subjectName = subjects.find((subject) => subject.id === draft.subjectId)?.name ?? "the subject";
     const input = buildEvidenceInput(draft, subjectName);
     if (!input) return;
 
@@ -198,6 +296,44 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
             </div>
 
             <div className="max-h-[70vh] overflow-y-auto overflow-x-hidden px-5 py-4 thin-scrollbar">
+              <div className="mb-4 rounded border border-dashed border-neutral-700 p-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDraftBox((value) => !value)}
+                  className="w-full text-left text-xs text-neutral-400 hover:text-neutral-200"
+                >
+                  {showDraftBox ? "▾" : "▸"} Paste statement (AI draft) — fills in the fields for you to review
+                </button>
+
+                {showDraftBox && (
+                  <div className="mt-2 space-y-2">
+                    <textarea
+                      value={draftText}
+                      onChange={(e) => setDraftText(e.target.value)}
+                      placeholder='e.g. "I saw Alex near the bank around 9am, he left heading north."'
+                      rows={2}
+                      className="w-full resize-none rounded border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-neutral-100 placeholder:text-neutral-600 focus:border-sky-500 focus:outline-none"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleExtract}
+                        disabled={extracting || !draftText.trim()}
+                        className="rounded bg-neutral-700 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {extracting ? "Extracting…" : "Extract with Gemini"}
+                      </button>
+                      {draftSubjectName && (
+                        <span className="text-xs text-neutral-500">
+                          Mentioned: <span className="text-neutral-300">{draftSubjectName}</span>
+                        </span>
+                      )}
+                    </div>
+                    {extractError && <p className="text-xs text-red-400">{extractError}</p>}
+                  </div>
+                )}
+              </div>
+
               <div
                 key={step}
                 style={{
