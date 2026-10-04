@@ -1,160 +1,140 @@
-import { useRef, useState } from "react";
-import { FileText, Paperclip, X } from "lucide-react";
-import type { Evidence, EvidenceAttachment, EvidenceType, Subject, TimeCertainty } from "../types";
-import { deriveApproximate, deriveExact, deriveRange } from "../timeUtils";
-import { formatBytes } from "../attachmentUtils";
-
-const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024; // 8MB — keeps data URLs from bloating memory in this mock UI
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
+// Replaces the old single-screen Add Evidence form with a 3-step wizard
+// (Source -> Details -> Uploads). This is a full rewrite rather than a
+// patch, so per review it's not annotated line-by-line against the old
+// file — see git history for the previous version.
+import { useEffect, useMemo, useState } from "react";
+import { Check } from "lucide-react";
+import type { Evidence, EvidenceType, Subject, SubjectKind } from "../types";
+import { StepSource } from "./addEvidenceWizard/StepSource";
+import { StepDetails } from "./addEvidenceWizard/StepDetails";
+import { StepUploads } from "./addEvidenceWizard/StepUploads";
+import type { LocationStat } from "./addEvidenceWizard/LocationCombobox";
+import {
+  DEFAULT_CERTAINTY_FOR_SOURCE,
+  EMPTY_DRAFT,
+  STEP_LABELS,
+  type WizardDraft,
+  type WizardStep,
+} from "./addEvidenceWizard/wizardTypes";
+import { isStep2Valid } from "./addEvidenceWizard/wizardTime";
+import { buildEvidenceInput } from "./addEvidenceWizard/wizardSubmit";
 
 interface AddEvidenceModalProps {
   open: boolean;
   subjects: Subject[];
+  evidence: Evidence[];
   onClose: () => void;
-  onSubmit: (input: Omit<Evidence, "id">) => void;
+  onSubmit: (input: Omit<Evidence, "id">) => void | Promise<void>;
+  onAddSubject: (input: Omit<Subject, "id">) => Promise<Subject>;
 }
 
-const EVIDENCE_TYPES: EvidenceType[] = [
-  "witness",
-  "cctv",
-  "gps",
-  "phone",
-  "transaction",
-  "transit",
-  "police",
-  "digital",
-  "other",
-];
+const ALL_STEPS: WizardStep[] = [1, 2, 3];
 
-const CERTAINTIES: TimeCertainty[] = ["exact", "approximate", "range"];
+export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, onAddSubject }: AddEvidenceModalProps) {
+  const [step, setStep] = useState<WizardStep>(1);
+  const [direction, setDirection] = useState<"forward" | "back">("forward");
+  const [slideEntered, setSlideEntered] = useState(true);
+  const [draft, setDraft] = useState<WizardDraft>(EMPTY_DRAFT);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [submittedAttachmentCount, setSubmittedAttachmentCount] = useState(0);
 
-const inputClass =
-  "w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-neutral-100 placeholder:text-neutral-600 focus:border-sky-500 focus:outline-none";
+  // Re-trigger the slide-in transition every time the step changes: render
+  // at the offset position first, then flip to "entered" next frame so the
+  // CSS transition actually animates instead of snapping.
+  useEffect(() => {
+    setSlideEntered(false);
+    const raf = requestAnimationFrame(() => setSlideEntered(true));
+    return () => cancelAnimationFrame(raf);
+  }, [step]);
 
-export function AddEvidenceModal({ open, subjects, onClose, onSubmit }: AddEvidenceModalProps) {
-  const [subjectId, setSubjectId] = useState(subjects[0]?.id ?? "");
-  const [evidenceType, setEvidenceType] = useState<EvidenceType>("witness");
-  const [locationName, setLocationName] = useState("");
-  const [lat, setLat] = useState("");
-  const [lng, setLng] = useState("");
-  const [eventDesc, setEventDesc] = useState("");
-  const [source, setSource] = useState("");
-  const [notes, setNotes] = useState("");
-  const [certainty, setCertainty] = useState<TimeCertainty>("exact");
-  const [exactValue, setExactValue] = useState("");
-  const [approxValue, setApproxValue] = useState("");
-  const [approxMargin, setApproxMargin] = useState("10");
-  const [rangeStart, setRangeStart] = useState("");
-  const [rangeEnd, setRangeEnd] = useState("");
-  const [attachments, setAttachments] = useState<EvidenceAttachment[]>([]);
-  const [attachmentError, setAttachmentError] = useState("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const locationStats = useMemo<LocationStat[]>(() => {
+    const byName = new Map<string, LocationStat>();
+    evidence.forEach((e) => {
+      const key = e.location.name.toLowerCase();
+      const existing = byName.get(key);
+      if (existing) existing.count += 1;
+      else byName.set(key, { name: e.location.name, lat: e.location.lat, lng: e.location.lng, count: 1 });
+    });
+    return Array.from(byName.values()).sort((a, b) => b.count - a.count);
+  }, [evidence]);
 
   if (!open) return null;
 
   function reset() {
-    setSubjectId(subjects[0]?.id ?? "");
-    setEvidenceType("witness");
-    setLocationName("");
-    setLat("");
-    setLng("");
-    setEventDesc("");
-    setSource("");
-    setNotes("");
-    setCertainty("exact");
-    setExactValue("");
-    setApproxValue("");
-    setApproxMargin("10");
-    setRangeStart("");
-    setRangeEnd("");
-    setAttachments([]);
-    setAttachmentError("");
-  }
-
-  async function handleFilesSelected(fileList: FileList | null) {
-    if (!fileList || fileList.length === 0) return;
-    setAttachmentError("");
-    const files = Array.from(fileList);
-    const tooBig = files.filter((f) => f.size > MAX_ATTACHMENT_BYTES);
-    const ok = files.filter((f) => f.size <= MAX_ATTACHMENT_BYTES);
-
-    const next = await Promise.all(
-      ok.map(async (file, i) => {
-        const dataUrl = await readFileAsDataUrl(file);
-        const attachment: EvidenceAttachment = {
-          id: `att-${Date.now()}-${i}`,
-          name: file.name,
-          type: file.type || "application/octet-stream",
-          size: file.size,
-          dataUrl,
-        };
-        return attachment;
-      })
-    );
-
-    setAttachments((prev) => [...prev, ...next]);
-    if (tooBig.length > 0) {
-      setAttachmentError(`Skipped ${tooBig.length} file(s) over 8MB.`);
-    }
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
-
-  function removeAttachment(id: string) {
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
+    // Attachments use URL.createObjectURL, which must be revoked explicitly
+    // or the blob stays alive in memory even after the modal is discarded.
+    // (After a successful submit, draft.attachments is already emptied —
+    // see handleSubmit — so this is a no-op there; it only fires for real
+    // when the modal is abandoned before submitting.)
+    draft.attachments.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+    setStep(1);
+    setDirection("forward");
+    setSlideEntered(true);
+    setDraft(EMPTY_DRAFT);
   }
 
   function handleClose() {
     reset();
+    setSubmitted(false);
     onClose();
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!subjectId || !locationName.trim() || !source.trim() || !eventDesc.trim()) return;
-
-    let times;
-    if (certainty === "exact") {
-      if (!exactValue) return;
-      times = deriveExact(exactValue);
-    } else if (certainty === "approximate") {
-      if (!approxValue) return;
-      times = deriveApproximate(approxValue, Number(approxMargin) || 0);
-    } else {
-      if (!rangeStart || !rangeEnd) return;
-      times = deriveRange(rangeStart, rangeEnd);
-    }
-
-    onSubmit({
-      subjectId,
-      evidenceType,
-      location: { name: locationName.trim(), lat: Number(lat) || 0, lng: Number(lng) || 0 },
-      event: eventDesc.trim(),
-      source: source.trim(),
-      notes: notes.trim() || undefined,
-      timeCertainty: certainty,
-      attachments: attachments.length > 0 ? attachments : undefined,
-      ...times,
-    });
-    handleClose();
+  function handleAddAnother() {
+    reset();
+    setSubmitted(false);
   }
+
+  function goTo(next: WizardStep, dir: "forward" | "back") {
+    setDirection(dir);
+    setStep(next);
+  }
+
+  function handleSelectSource(type: EvidenceType) {
+    setDraft((d) => {
+      // Changing the source only re-applies the When default — everything
+      // else already typed in stays put.
+      const certainty = d.evidenceType === type ? d.certainty : DEFAULT_CERTAINTY_FOR_SOURCE[type];
+      return { ...d, evidenceType: type, certainty };
+    });
+    goTo(2, "forward");
+  }
+
+  function patchDraft(patch: Partial<WizardDraft>) {
+    setDraft((d) => ({ ...d, ...patch }));
+  }
+
+  async function handleAddSubject(name: string, kind: SubjectKind) {
+    return onAddSubject({ name, kind });
+  }
+
+  async function handleSubmit() {
+    const subjectName = subjects.find((s) => s.id === draft.subjectId)?.name ?? "the subject";
+    const input = buildEvidenceInput(draft, subjectName);
+    if (!input) return;
+
+    setSubmitting(true);
+    await onSubmit(input);
+    setSubmitting(false);
+
+    // The attachments just got handed off to `input` (now living in the
+    // store as part of the real Evidence) — clear the draft's copy without
+    // revoking their object URLs, so `reset()` later doesn't break them.
+    setSubmittedAttachmentCount(draft.attachments.length);
+    setDraft(EMPTY_DRAFT);
+    setSubmitted(true);
+  }
+
+  const step2Valid = isStep2Valid(draft);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={handleClose}>
-      <form
+      <div
         onClick={(e) => e.stopPropagation()}
-        onSubmit={handleSubmit}
-        className="w-full max-w-md rounded-lg border border-neutral-800 bg-neutral-900 p-5 shadow-xl"
+        className="w-full max-w-md overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900 shadow-xl"
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-neutral-100">Add Evidence</h2>
+        <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-4">
+          <h2 className="text-sm font-semibold text-neutral-100">Add evidence</h2>
           <button
             type="button"
             onClick={handleClose}
@@ -165,233 +145,137 @@ export function AddEvidenceModal({ open, subjects, onClose, onSubmit }: AddEvide
           </button>
         </div>
 
-        <div className="space-y-3 text-sm">
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="mb-1 block text-xs text-neutral-400">Subject</span>
-              <select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className={inputClass}>
-                {subjects.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs text-neutral-400">Type</span>
-              <select
-                value={evidenceType}
-                onChange={(e) => setEvidenceType(e.target.value as EvidenceType)}
-                className={`${inputClass} capitalize`}
+        {submitted ? (
+          <div className="flex flex-col items-center gap-3 px-5 py-10 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400">
+              <Check size={24} />
+            </div>
+            <p className="text-sm font-medium text-neutral-100">Added to the timeline</p>
+            <p className="text-xs text-neutral-500">
+              {submittedAttachmentCount > 0
+                ? `${submittedAttachmentCount} attachment${submittedAttachmentCount === 1 ? "" : "s"} included.`
+                : "No attachments included."}
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={handleAddAnother}
+                className="rounded border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 hover:border-neutral-500"
               >
-                {EVIDENCE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </label>
+                Add another
+              </button>
+              <button
+                type="button"
+                onClick={handleClose}
+                className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500"
+              >
+                Close
+              </button>
+            </div>
           </div>
-
-          <label className="block">
-            <span className="mb-1 block text-xs text-neutral-400">What was observed</span>
-            <input
-              value={eventDesc}
-              onChange={(e) => setEventDesc(e.target.value)}
-              placeholder="e.g. Witness reports seeing Person A near..."
-              className={inputClass}
-            />
-          </label>
-
-          <div className="grid grid-cols-3 gap-3">
-            <label className="block">
-              <span className="mb-1 block text-xs text-neutral-400">Location</span>
-              <input
-                value={locationName}
-                onChange={(e) => setLocationName(e.target.value)}
-                placeholder="Metrotown"
-                className={inputClass}
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs text-neutral-400">Lat</span>
-              <input
-                value={lat}
-                onChange={(e) => setLat(e.target.value)}
-                placeholder="49.2267"
-                className={`${inputClass} font-mono`}
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs text-neutral-400">Lng</span>
-              <input
-                value={lng}
-                onChange={(e) => setLng(e.target.value)}
-                placeholder="-123.0033"
-                className={`${inputClass} font-mono`}
-              />
-            </label>
-          </div>
-
-          <label className="block">
-            <span className="mb-1 block text-xs text-neutral-400">Source</span>
-            <input
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              placeholder="Witness statement: ..."
-              className={inputClass}
-            />
-          </label>
-
-          <div>
-            <span className="mb-1 block text-xs text-neutral-400">Time certainty</span>
-            <div className="mb-2 flex gap-1 rounded border border-neutral-700 bg-neutral-950 p-0.5 text-xs">
-              {CERTAINTIES.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setCertainty(c)}
-                  className={`flex-1 rounded px-2 py-1 capitalize transition-colors ${
-                    certainty === c ? "bg-sky-600 text-white" : "text-neutral-400 hover:text-neutral-200"
-                  }`}
-                >
-                  {c}
-                </button>
+        ) : (
+          <>
+            <div className="flex items-center justify-center gap-1.5 border-b border-neutral-800 px-5 py-3 text-xs">
+              {ALL_STEPS.map((s, i) => (
+                <div key={s} className="flex items-center gap-1.5">
+                  <span
+                    className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold ${
+                      s === step
+                        ? "bg-sky-600 text-white"
+                        : s < step
+                          ? "bg-sky-600/25 text-sky-300"
+                          : "bg-neutral-800 text-neutral-500"
+                    }`}
+                  >
+                    {s < step ? <Check size={11} /> : s}
+                  </span>
+                  <span className={s === step ? "font-medium text-neutral-100" : "text-neutral-500"}>
+                    {STEP_LABELS[s]}
+                  </span>
+                  {i < ALL_STEPS.length - 1 && <span className="px-0.5 text-neutral-600">→</span>}
+                </div>
               ))}
             </div>
 
-            {certainty === "exact" && (
-              <input
-                type="datetime-local"
-                step={1}
-                value={exactValue}
-                onChange={(e) => setExactValue(e.target.value)}
-                className={`${inputClass} font-mono`}
-              />
-            )}
-
-            {certainty === "approximate" && (
-              <div className="flex gap-2">
-                <input
-                  type="datetime-local"
-                  value={approxValue}
-                  onChange={(e) => setApproxValue(e.target.value)}
-                  className={`${inputClass} flex-1 font-mono`}
-                />
-                <div className="flex items-center gap-1 whitespace-nowrap text-xs text-neutral-400">
-                  <span>±</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={approxMargin}
-                    onChange={(e) => setApproxMargin(e.target.value)}
-                    className={`${inputClass} w-14 font-mono`}
+            <div className="max-h-[70vh] overflow-y-auto overflow-x-hidden px-5 py-4 thin-scrollbar">
+              <div
+                key={step}
+                style={{
+                  transform: slideEntered ? "translateX(0)" : direction === "forward" ? "translateX(32px)" : "translateX(-32px)",
+                  opacity: slideEntered ? 1 : 0,
+                  transition: "transform 280ms ease-out, opacity 280ms ease-out",
+                }}
+              >
+                {step === 1 && <StepSource onSelect={handleSelectSource} />}
+                {step === 2 && (
+                  <StepDetails
+                    draft={draft}
+                    subjects={subjects}
+                    locationStats={locationStats}
+                    onChangeDraft={patchDraft}
+                    onBackToSource={() => goTo(1, "back")}
+                    onAddSubject={handleAddSubject}
                   />
-                  <span>min</span>
-                </div>
+                )}
+                {step === 3 && (
+                  <StepUploads
+                    draft={draft}
+                    subjects={subjects}
+                    onChangeDraft={patchDraft}
+                    onBackToDetails={() => goTo(2, "back")}
+                  />
+                )}
               </div>
-            )}
+            </div>
 
-            {certainty === "range" && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="datetime-local"
-                  value={rangeStart}
-                  onChange={(e) => setRangeStart(e.target.value)}
-                  className={`${inputClass} flex-1 font-mono`}
-                />
-                <span className="text-neutral-500">to</span>
-                <input
-                  type="datetime-local"
-                  value={rangeEnd}
-                  onChange={(e) => setRangeEnd(e.target.value)}
-                  className={`${inputClass} flex-1 font-mono`}
-                />
-              </div>
-            )}
-          </div>
+            <div className="flex items-center justify-between border-t border-neutral-800 px-5 py-3">
+              {step > 1 ? (
+                <button
+                  type="button"
+                  onClick={() => goTo((step - 1) as WizardStep, "back")}
+                  className="rounded px-3 py-1.5 text-sm text-neutral-400 hover:text-neutral-200"
+                >
+                  ← Back
+                </button>
+              ) : (
+                <span />
+              )}
 
-          <label className="block">
-            <span className="mb-1 block text-xs text-neutral-400">Notes (optional)</span>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={2}
-              className={`${inputClass} resize-none`}
-            />
-          </label>
+              {step === 1 && (
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  className="rounded px-3 py-1.5 text-sm text-neutral-400 hover:text-neutral-200"
+                >
+                  Cancel
+                </button>
+              )}
 
-          <div>
-            <span className="mb-1 block text-xs text-neutral-400">Attachments (optional)</span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept="image/*,.pdf,.doc,.docx,.txt"
-              onChange={(e) => handleFilesSelected(e.target.files)}
-              className="hidden"
-              id="evidence-attachments-input"
-            />
-            <label
-              htmlFor="evidence-attachments-input"
-              className="flex cursor-pointer items-center justify-center gap-1.5 rounded border border-dashed border-neutral-700 px-2 py-2 text-xs text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"
-            >
-              <Paperclip size={13} />
-              Upload documents or images
-            </label>
-            {attachmentError && <p className="mt-1 text-[11px] text-red-400">{attachmentError}</p>}
+              {step === 2 && (
+                <button
+                  type="button"
+                  disabled={!step2Valid}
+                  onClick={() => goTo(3, "forward")}
+                  className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+                >
+                  Next →
+                </button>
+              )}
 
-            {attachments.length > 0 && (
-              <ul className="mt-2 space-y-1.5">
-                {attachments.map((a) => (
-                  <li
-                    key={a.id}
-                    className="flex items-center gap-2 rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5"
-                  >
-                    {a.type.startsWith("image/") ? (
-                      <img src={a.dataUrl} alt="" className="h-8 w-8 flex-shrink-0 rounded object-cover" />
-                    ) : (
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded bg-neutral-800 text-neutral-500">
-                        <FileText size={15} />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs text-neutral-300">{a.name}</p>
-                      <p className="font-mono text-[10px] text-neutral-600">{formatBytes(a.size)}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeAttachment(a.id)}
-                      aria-label="Remove attachment"
-                      className="flex-shrink-0 rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-red-400"
-                    >
-                      <X size={13} />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <button
-            type="button"
-            disabled
-            title="Coming soon: paste a raw statement and let Gemini draft the fields above"
-            className="w-full cursor-not-allowed rounded border border-dashed border-neutral-700 px-2 py-1.5 text-xs text-neutral-600"
-          >
-            Paste statement (AI draft — coming soon)
-          </button>
-        </div>
-
-        <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={handleClose} className="rounded px-3 py-1.5 text-sm text-neutral-400 hover:text-neutral-200">
-            Cancel
-          </button>
-          <button type="submit" className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500">
-            Add Evidence
-          </button>
-        </div>
-      </form>
+              {step === 3 && (
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={handleSubmit}
+                  className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+                >
+                  {submitting ? "Adding…" : "Add evidence"}
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
