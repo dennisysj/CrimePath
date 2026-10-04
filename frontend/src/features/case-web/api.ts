@@ -325,6 +325,7 @@ class HttpCaseWebApi implements CaseWebApi {
   getEvidenceHistory(caseId: string, evidenceId: string): Promise<HistoryEntry[]> {
     return request<HistoryEntry[]>(`/cases/${caseId}/evidence/${evidenceId}/history`);
   }
+
   getCaseHistory(caseId: string): Promise<HistoryEntry[]> {
     return request<HistoryEntry[]>(`/cases/${caseId}/history`);
   }
@@ -413,7 +414,7 @@ class HttpCaseWebApi implements CaseWebApi {
     });
   }
 
-  getAnalysis(): Promise<CaseAnalysis> {
+  getAnalysis(_caseId: string): Promise<CaseAnalysis> {
     return Promise.resolve({
       conflicts: [],
       gaps: [],
@@ -422,7 +423,7 @@ class HttpCaseWebApi implements CaseWebApi {
     });
   }
 
-  updateSuggestionStatus(_id: string, _status: AiSuggestionStatus): Promise<void> {
+  updateSuggestionStatus(_id: string, _status: AiSuggestionStatus, _caseId: string): Promise<void> {
     return Promise.reject(new Error("Saving AI suggestion decisions is not implemented yet"));
   }
 }

@@ -4,6 +4,7 @@ import type { AiSuggestion, CaseAnalysis, Evidence, Subject } from "../types";
 import type { Selection } from "../store";
 import { formatClock, formatClockWithSeconds } from "../timeUtils";
 import { formatBytes } from "../attachmentUtils";
+import { formatLocationLabel } from "../locationUtils";
 
 interface DetailsPanelProps {
   subjects: Subject[];
@@ -110,7 +111,7 @@ export function DetailsPanel({
             />
             <Row
               label="Location"
-              value={`${selectedEvidence.location.name} (${selectedEvidence.location.lat.toFixed(4)}, ${selectedEvidence.location.lng.toFixed(4)})`}
+              value={formatLocationLabel(selectedEvidence)}
             />
             <Row label="Source" value={selectedEvidence.source} />
             {selectedEvidence.notes && <Row label="Notes" value={selectedEvidence.notes} />}

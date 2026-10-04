@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import { MapContainer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import iconRetinaUrl from "leaflet/dist/images/marker-icon-2x.png";
 import iconUrl from "leaflet/dist/images/marker-icon.png";
 import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 import { isValidCoordinate } from "../utils/googleMaps";
+import { BaseTiles, type MapVariant } from "./mapTiles";
 
 const markerIcon = L.icon({
   iconRetinaUrl,
@@ -18,10 +19,14 @@ const markerIcon = L.icon({
 });
 
 export type MapPreviewProps = {
-  latitude: number | null;
-  longitude: number | null;
+  latitude: number | null | undefined;
+  longitude: number | null | undefined;
   zoom?: number;
   popup?: ReactNode;
+  /** Tailwind height class for the map box. */
+  heightClass?: string;
+  variant?: MapVariant;
+  scrollWheelZoom?: boolean;
 };
 
 function SyncMapView({
@@ -43,7 +48,15 @@ function SyncMapView({
   return null;
 }
 
-export function MapPreview({ latitude, longitude, zoom = 16, popup }: MapPreviewProps) {
+export function MapPreview({
+  latitude,
+  longitude,
+  zoom = 16,
+  popup,
+  heightClass = "h-[420px]",
+  variant = "light",
+  scrollWheelZoom = true,
+}: MapPreviewProps) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -55,24 +68,21 @@ export function MapPreview({ latitude, longitude, zoom = 16, popup }: MapPreview
   }
 
   if (!mounted) {
-    return <div className="h-[420px] w-full rounded-lg bg-neutral-900" aria-hidden />;
+    return <div className={`${heightClass} w-full rounded-lg bg-neutral-900`} aria-hidden />;
   }
 
   return (
-    <div className="h-[420px] w-full overflow-hidden rounded-lg border border-neutral-800">
+    <div className={`${heightClass} isolate w-full overflow-hidden rounded-lg border border-neutral-800`}>
       <MapContainer
         key={`${latitude},${longitude},${zoom}`}
         center={[latitude, longitude]}
         zoom={zoom}
-        scrollWheelZoom
-        className="h-full w-full"
+        scrollWheelZoom={scrollWheelZoom}
+        className={`h-full w-full ${variant === "dark" ? "map-dark" : ""}`}
         style={{ height: "100%", width: "100%" }}
       >
         <SyncMapView latitude={latitude} longitude={longitude} zoom={zoom} />
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <BaseTiles />
         <Marker position={[latitude, longitude]} icon={markerIcon}>
           {popup ? <Popup className="event-popup">{popup}</Popup> : null}
         </Marker>

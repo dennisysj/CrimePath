@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Archive, Loader2, Pencil, Trash2, Users, X } from "lucide-react";
+import { Archive, Loader2, Pencil, Route, Trash2, Users, X } from "lucide-react";
 import { SAMPLE_CASE_ID, useCaseWebStore } from "../store";
 import { getCaseHistory, getEvidenceHistory, isMockMode } from "../api";
+import { MIN_ROUTE_POINTS, getRoutePoints } from "../locationUtils";
 import type { Evidence, Subject } from "../types";
 import { formatClock } from "../timeUtils";
 import { AddEvidenceModal } from "./AddEvidenceModal";
 import { CardTimeline } from "./CardTimeline";
+import { EventPathModal } from "./EventPathModal";
 import { EvidenceList } from "./EvidenceList";
 import { ManageSubjectsModal } from "./ManageSubjectsModal";
 import { EditCaseModal } from "./EditCaseModal";
@@ -167,6 +169,7 @@ export function CaseWebPage() {
   const [editCaseOpen, setEditCaseOpen] = useState(false);
   const currentCase = cases.find((c) => c.id === selectedCaseId);
   const isDemoCase = selectedCaseId === SAMPLE_CASE_ID;
+  const [pathSubjectId, setPathSubjectId] = useState<string | null>(null);
 
   // Store actions already put failures in the error banner; swallow the
   // rethrow here for fire-and-forget callers (list/details buttons).
@@ -175,6 +178,23 @@ export function CaseWebPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // The path follows whichever subject is in focus: a selected subject chip,
+  // or the primary subject of the selected evidence. With nothing in focus,
+  // fall back to the first subject that has a drawable path.
+  const pathTarget = useMemo(() => {
+    const focusId =
+      selection?.type === "subject"
+        ? selection.id
+        : selection?.type === "evidence"
+          ? evidence.find((e) => e.id === selection.id)?.subjectId
+          : undefined;
+    const targetId =
+      focusId ?? subjects.find((s) => getRoutePoints(evidence, s.id).length >= MIN_ROUTE_POINTS)?.id;
+    const subject = subjects.find((s) => s.id === targetId);
+    const pointCount = subject ? getRoutePoints(evidence, subject.id).length : 0;
+    return { subject, pointCount };
+  }, [selection, evidence, subjects]);
 
   if (loading) {
     return (
@@ -199,7 +219,7 @@ export function CaseWebPage() {
             {analysis.aiSuggestions.length} AI suggestions
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-shrink-0 items-center gap-2 whitespace-nowrap">
           <select
             value={selectedCaseId}
             onChange={(event) => selectCase(event.target.value)}
@@ -233,6 +253,25 @@ export function CaseWebPage() {
               <Trash2 size={14} />
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setPathSubjectId(pathTarget.subject?.id ?? null)}
+            disabled={pathTarget.pointCount < MIN_ROUTE_POINTS}
+            title={
+              !pathTarget.subject
+                ? "No subject has enough located evidence for a path"
+                : pathTarget.pointCount >= MIN_ROUTE_POINTS
+                  ? `Show ${pathTarget.subject.name}'s ${pathTarget.pointCount} located events in chronological order`
+                  : pathTarget.pointCount === 1
+                    ? `${pathTarget.subject.name} has only one located event - see it in the evidence detail panel`
+                    : `${pathTarget.subject.name} has no evidence with coordinates`
+            }
+            className="inline-flex items-center gap-1.5 rounded border border-neutral-700 px-3 py-1.5 text-sm text-neutral-200 hover:border-neutral-500 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600"
+          >
+            <Route size={14} />
+            {pathTarget.pointCount >= MIN_ROUTE_POINTS ? "Show Event Path" : "No Event Path"}
+            {pathTarget.subject && <span className="text-xs text-neutral-500">- {pathTarget.subject.name}</span>}
+          </button>
           <button
             type="button"
             onClick={() => setNewCaseOpen(true)}
@@ -475,6 +514,51 @@ export function CaseWebPage() {
         onClose={() => setAllEvidenceOpen(false)}
         onSelectEvidence={selectEvidence}
       />
+
+      <EventPathModal
+        open={pathSubjectId !== null}
+        subjects={subjects}
+        evidence={evidence}
+        subjectId={pathSubjectId}
+        onChangeSubject={setPathSubjectId}
+        onSelectEvidence={(id) => {
+          if (!(selection?.type === "evidence" && selection.id === id)) selectEvidence(id);
+        }}
+        onClose={() => setPathSubjectId(null)}
+      />
     </div>
+  );
+}
+
+function ShowEventPathButton({
+  subjectName,
+  pointCount,
+  onClick,
+}: {
+  subjectName: string | undefined;
+  pointCount: number;
+  onClick: () => void;
+}) {
+  const enabled = pointCount >= MIN_ROUTE_POINTS;
+  const title = !subjectName
+    ? "No subject has enough located evidence for a path"
+    : enabled
+      ? `Show ${subjectName}'s ${pointCount} located events in chronological order`
+      : pointCount === 1
+        ? `${subjectName} has only one located event — see it in the evidence detail panel`
+        : `${subjectName} has no evidence with coordinates`;
+
+  return (
+    <button
+      type="button"
+      disabled={!enabled}
+      onClick={onClick}
+      title={title}
+      className="flex items-center gap-1.5 rounded border border-neutral-700 px-3 py-1.5 text-sm text-neutral-200 hover:border-neutral-500 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600"
+    >
+      <Route size={14} />
+      {enabled ? "Show Event Path" : "No Event Path"}
+      {subjectName && <span className="text-xs text-neutral-500">· {subjectName}</span>}
+    </button>
   );
 }

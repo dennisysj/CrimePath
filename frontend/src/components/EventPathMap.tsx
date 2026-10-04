@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
+import { MapContainer, Marker, Polyline, Popup, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { eventsWithLocations } from "../utils/googleMaps";
+import { BaseTiles, type MapVariant } from "./mapTiles";
 
 export type LocationEvent = {
-  id: number;
+  id: number | string;
   name: string;
   capturedAt: string;
   latitude: number | null;
@@ -42,10 +43,16 @@ export function EventPopupContent({ event, order }: { event: LocationEvent; orde
   );
 }
 
-function sequenceIcon(order: number) {
+const MARKER_COLORS: Record<MapVariant, { border: string; fill: string }> = {
+  light: { border: "#0284c7", fill: "#0f172a" },
+  dark: { border: "#e0f2fe", fill: "#0284c7" },
+};
+
+function sequenceIcon(order: number, variant: MapVariant) {
+  const { border, fill } = MARKER_COLORS[variant];
   return L.divIcon({
     className: "event-sequence-marker",
-    html: `<span style="display:flex;height:28px;width:28px;align-items:center;justify-content:center;border-radius:9999px;border:2px solid #0284c7;background:#0f172a;color:#fff;font:700 13px ui-sans-serif,system-ui,sans-serif;">${order}</span>`,
+    html: `<span style="display:flex;height:28px;width:28px;align-items:center;justify-content:center;border-radius:9999px;border:2px solid ${border};background:${fill};color:#fff;font:700 13px ui-sans-serif,system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.5);">${order}</span>`,
     iconSize: [28, 28],
     iconAnchor: [14, 14],
     popupAnchor: [0, -16],
@@ -82,9 +89,19 @@ function FitEventBounds({ positions }: { positions: [number, number][] }) {
 
 type EventPathMapProps = {
   events: LocationEvent[];
+  /** Tailwind height class for the map box. */
+  heightClass?: string;
+  variant?: MapVariant;
+  /** Always show the "1. Name" labels; when false they appear on hover. */
+  permanentLabels?: boolean;
 };
 
-export function EventPathMap({ events }: EventPathMapProps) {
+export function EventPathMap({
+  events,
+  heightClass = "h-[420px]",
+  variant = "light",
+  permanentLabels = true,
+}: EventPathMapProps) {
   const [mounted, setMounted] = useState(false);
   const located = useMemo(() => eventsWithLocations(events), [events]);
   const positions = useMemo(
@@ -101,38 +118,40 @@ export function EventPathMap({ events }: EventPathMapProps) {
   }
 
   if (!mounted) {
-    return <div className="h-[420px] w-full rounded-lg bg-neutral-900" aria-hidden />;
+    return <div className={`${heightClass} w-full rounded-lg bg-neutral-900`} aria-hidden />;
   }
 
   return (
-    <div className="h-[420px] w-full overflow-hidden rounded-lg border border-neutral-800">
+    <div className={`${heightClass} isolate w-full overflow-hidden rounded-lg border border-neutral-800`}>
       <MapContainer
         center={positions[0]}
         zoom={13}
         scrollWheelZoom
-        className="h-full w-full"
+        className={`h-full w-full ${variant === "dark" ? "map-dark" : ""}`}
         style={{ height: "100%", width: "100%" }}
       >
         <FitEventBounds positions={positions} />
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <BaseTiles />
         {positions.length > 1 && (
           <Polyline
             positions={positions}
-            pathOptions={{ color: "#0284c7", weight: 4, opacity: 0.9, dashArray: "10 8" }}
+            pathOptions={{
+              color: variant === "dark" ? "#38bdf8" : "#0284c7",
+              weight: 4,
+              opacity: 0.9,
+              dashArray: "10 8",
+            }}
           />
         )}
         {located.map((event, index) => (
           <Marker
             key={event.id}
             position={[event.latitude, event.longitude]}
-            icon={sequenceIcon(index + 1)}
+            icon={sequenceIcon(index + 1, variant)}
             zIndexOffset={(index + 1) * 10}
           >
             <Tooltip
-              permanent
+              permanent={permanentLabels}
               direction="top"
               offset={[0, -12]}
               className="event-sequence-tooltip"

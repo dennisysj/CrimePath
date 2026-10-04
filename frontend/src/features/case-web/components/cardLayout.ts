@@ -49,10 +49,12 @@ function linkLabel(a: Evidence, b: Evidence, subjects: Subject[]): string {
   const subjectName = (id: string) => subjects.find((s) => s.id === id)?.name ?? "subject";
   const roleWord = (role: InvolvedRole) => ROLE_LABELS[role].toLowerCase();
 
-  const aInvolvesB = a.involvedParties.find((p) => p.subjectId === b.subjectId);
+  const aParties = a.involvedParties ?? [];
+  const bParties = b.involvedParties ?? [];
+  const aInvolvesB = aParties.find((p) => p.subjectId === b.subjectId);
   if (aInvolvesB) return `${roleWord(aInvolvesB.role)} ${subjectName(b.subjectId)}`;
 
-  const bInvolvesA = b.involvedParties.find((p) => p.subjectId === a.subjectId);
+  const bInvolvesA = bParties.find((p) => p.subjectId === a.subjectId);
   if (bInvolvesA) return `${roleWord(bInvolvesA.role)} ${subjectName(a.subjectId)}`;
 
   return "linked";

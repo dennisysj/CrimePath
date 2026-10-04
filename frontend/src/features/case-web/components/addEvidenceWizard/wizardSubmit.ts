@@ -59,7 +59,10 @@ export function buildEvidenceInput(draft: WizardDraft, subjectName: string): Omi
     subjectId: draft.subjectId,
     evidenceType: draft.evidenceType,
     timeCertainty: draft.certainty,
-    location: { name: locationName, lat: draft.locationLat ?? 0, lng: draft.locationLng ?? 0 },
+    location:
+      draft.locationLat != null && draft.locationLng != null
+        ? { name: locationName, lat: draft.locationLat, lng: draft.locationLng }
+        : { name: locationName },
     event: `${sourceLabel} evidence involving ${subjectName} near ${locationName}.`,
     source: sourceLabel,
     notes: draft.notes.trim() || undefined,

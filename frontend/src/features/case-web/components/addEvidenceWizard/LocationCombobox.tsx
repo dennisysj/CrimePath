@@ -4,8 +4,8 @@ import { KNOWN_LOCATIONS } from "../../mockData";
 
 export interface LocationStat {
   name: string;
-  lat: number;
-  lng: number;
+  lat: number | null;
+  lng: number | null;
   count: number;
 }
 

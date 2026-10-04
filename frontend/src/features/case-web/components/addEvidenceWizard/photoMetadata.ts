@@ -130,8 +130,8 @@ export function evidenceToDraft(e: Evidence): WizardDraft {
     rangeStart: e.timeCertainty === "range" ? earliest.clock : { ...EMPTY_CLOCK },
     rangeEnd: e.timeCertainty === "range" ? latest.clock : { ...EMPTY_CLOCK },
     locationName: e.location.name,
-    locationLat: e.location.lat,
-    locationLng: e.location.lng,
+    locationLat: e.location.lat ?? null,
+    locationLng: e.location.lng ?? null,
     attachments: e.attachments ?? [],
     notes: e.notes ?? "",
   };

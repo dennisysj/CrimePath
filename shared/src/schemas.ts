@@ -191,6 +191,16 @@ export type ExtractEvidenceRequest = z.infer<typeof ExtractEvidenceRequestSchema
 
 export interface ExtractEvidenceResponse {
   evidence: Partial<Evidence>;
+  /**
+   * Gemini has no DB access, so it can't resolve a person's name to a real
+   * Entity id or a place name to real coordinates - those stay out of
+   * `evidence` (entityIds/location are intentionally omitted). These two
+   * carry the raw extracted names through so the caller can resolve them
+   * (match/create an entity, geocode the place) and let the investigator
+   * confirm before anything is persisted.
+   */
+  extractedSubjectName?: string;
+  extractedLocationName?: string;
 }
 
 export interface HealthResponse {

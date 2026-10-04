@@ -250,7 +250,8 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
       const created = isDemo()
         ? { ...input, id: `local-${nextLocalSeq++}` }
         : await persist("Couldn't save evidence", () => caseWebApi.addEvidence(get().selectedCaseId, input));
-      set((state) => ({ evidence: [...state.evidence, created] }));
+      const analysis = isDemo() ? get().analysis : await persist("Couldn't refresh analysis", () => caseWebApi.getAnalysis(get().selectedCaseId));
+      set((state) => ({ evidence: [...state.evidence, created], analysis }));
       flashNewEvidence(created.id);
     },
 
@@ -279,8 +280,10 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
       if (!isDemo()) {
         await persist("Couldn't remove evidence", () => caseWebApi.removeEvidence(get().selectedCaseId, id));
       }
+      const analysis = isDemo() ? get().analysis : await persist("Couldn't refresh analysis", () => caseWebApi.getAnalysis(get().selectedCaseId));
       set((state) => ({
         evidence: state.evidence.filter((e) => e.id !== id),
+        analysis,
         selection: state.selection?.type === "evidence" && state.selection.id === id ? null : state.selection,
       }));
     },
