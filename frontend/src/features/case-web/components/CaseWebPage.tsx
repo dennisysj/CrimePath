@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react"; // UPDATED line 1: was `useEffect, useMemo, useRef, useState` with no change here — kept as-is, `useRef` still used for the timeline ref
+import { motion } from "motion/react";
 import { Route } from "lucide-react";
 import { useCaseWebStore } from "../store";
 import { MIN_ROUTE_POINTS, getRoutePoints } from "../locationUtils";
 import { AddEvidenceModal } from "./AddEvidenceModal";
-import { EventPathModal } from "./EventPathModal";
-import { CardTimeline } from "./CardTimeline"; // UPDATED line 4: was `import { CaseWeb } from "./CaseWeb";` — timeline replaced with the card-based version
-// DELETED line 5: removed `import { DetailsPanel } from "./DetailsPanel";` — its job is now done by CardTimeline's own EvidenceDetailPanel, rendered below the canvas instead of beside it
+import { CardTimeline, type CardTimelineHandle } from "./CardTimeline";
+import { EventPathModal } from "./EventPathModal"; // UPDATED line 8: was `import { EvidenceDetailPanel } from "./EvidenceDetailPanel";` + `import { PathView } from "./PathView";` — the drawer import is gone (CardTimeline owns its own restored bottom panel again) and PathView is replaced by the restored pop-out modal
 import { EvidenceList } from "./EvidenceList";
 
 export function CaseWebPage() {
@@ -19,7 +19,7 @@ export function CaseWebPage() {
     newEvidenceIds,
     load,
     addEvidence,
-    addSubject, // ADDED line 19: for the Add Evidence wizard's "+ New subject" form
+    addSubject,
     removeEvidence,
     selectSubject,
     selectEvidence,
@@ -27,7 +27,8 @@ export function CaseWebPage() {
     updateSuggestionStatus,
   } = useCaseWebStore();
   const [modalOpen, setModalOpen] = useState(false);
-  const [pathSubjectId, setPathSubjectId] = useState<string | null>(null);
+  const [pathSubjectId, setPathSubjectId] = useState<string | null>(null); // UPDATED line 33: replaces the old `pathViewActive`/`drawerEvidenceId` state pair — this one state now doubles as "is the path modal open" (non-null) exactly like the original EventPathModal wiring
+  const timelineRef = useRef<CardTimelineHandle>(null);
 
   useEffect(() => {
     load();
@@ -43,62 +44,78 @@ export function CaseWebPage() {
         : selection?.type === "evidence"
           ? evidence.find((e) => e.id === selection.id)?.subjectId
           : undefined;
-    const targetId =
-      focusId ?? subjects.find((s) => getRoutePoints(evidence, s.id).length >= MIN_ROUTE_POINTS)?.id;
+    const targetId = focusId ?? subjects.find((s) => getRoutePoints(evidence, s.id).length >= MIN_ROUTE_POINTS)?.id;
     const subject = subjects.find((s) => s.id === targetId);
     const pointCount = subject ? getRoutePoints(evidence, subject.id).length : 0;
     return { subject, pointCount };
   }, [selection, evidence, subjects]);
 
+  // UPDATED: was `handleJumpToEvidence`, which also had to close the in-place path view before focusing
+  // a card. The path is a pop-out again now, so a sidebar click can always focus the timeline directly.
+  function handleJumpToEvidence(id: string) {
+    timelineRef.current?.focusEvidence(id);
+  }
+
+  // UPDATED: was `handleShowPath` + `handleTogglePathView`, which flipped `pathViewActive` to swap the
+  // in-place PathView in for the card timeline. Restored to the original's plain "open the pop-out".
+  function handleOpenPathModal(subjectId: string | null) {
+    setPathSubjectId(subjectId);
+  }
+
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-neutral-950 font-mono text-sm text-neutral-500">
+      <div className="flex h-screen items-center justify-center font-mono text-sm" style={{ background: "var(--bg)", color: "var(--text-muted)" }}>
         Loading case data…
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen flex-col bg-neutral-950 text-neutral-100">
-      <header className="flex items-center justify-between border-b border-neutral-800 px-6 py-4">
+    <div className="flex h-screen flex-col" style={{ background: "var(--bg)", color: "var(--text)" }}>
+      <header className="flex items-center justify-between border-b px-6 py-4" style={{ borderColor: "var(--border)" }}>
         <div>
           <h1 className="text-lg font-semibold">{caseName}</h1>
-          <p className="mt-0.5 font-mono text-xs text-neutral-500">
+          <p className="mt-0.5 font-mono text-xs" style={{ color: "var(--text-muted)" }}>
             {evidence.length} evidence · {analysis.conflicts.length} conflicts · {analysis.gaps.length} gaps ·{" "}
             {analysis.aiSuggestions.length} AI suggestions
           </p>
         </div>
         <div className="flex flex-shrink-0 items-center gap-2 whitespace-nowrap">
-          <ShowEventPathButton
-            subjectName={pathTarget.subject?.name}
-            pointCount={pathTarget.pointCount}
-            onClick={() => setPathSubjectId(pathTarget.subject?.id ?? null)}
+          <ShowPathButton
+            enabled={pathTarget.pointCount >= MIN_ROUTE_POINTS}
+            onClick={() => handleOpenPathModal(pathTarget.subject?.id ?? null)}
           />
-          <button
+          <motion.button
+            whileTap={{ scale: 0.95 }}
             onClick={() => setModalOpen(true)}
-            className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500"
+            className="rounded px-3 py-1.5 text-sm font-medium transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2"
+            style={{ background: "var(--primary)", color: "var(--primary-text)" }}
           >
-            + Add Evidence
-          </button>
+            + Add evidence
+          </motion.button>
         </div>
       </header>
 
+      {/* UPDATED lines 95-110: was a `flex min-h-0 flex-1 overflow-hidden` row with `<main>` set up to
+          absolutely-position the slide-out drawer over the canvas (`relative`, `overflow-hidden`) and
+          force the card timeline to fill it (`h-full`). Restored to the original's plain scrollable
+          main — CardTimeline now carries its own natural-height canvas + bottom detail panel again. */}
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-80 flex-shrink-0 border-r border-neutral-800">
+        <aside className="flex-shrink-0 border-r" style={{ borderColor: "var(--border)" }}>
           <EvidenceList
             subjects={subjects}
             evidence={evidence}
             selection={selection}
             onSelectSubject={selectSubject}
-            onSelectEvidence={selectEvidence}
+            onJumpToEvidence={handleJumpToEvidence}
             onRemoveEvidence={removeEvidence}
           />
         </aside>
 
-        {/* UPDATED lines 70-93: was <main><CaseWeb/></main> + a separate <aside><DetailsPanel/></aside> column — */}
-        {/* the card timeline now renders its own detail panel below the canvas, so there's a single full-width main area. */}
         <main className="thin-scrollbar flex-1 overflow-auto p-6">
           <CardTimeline
+            ref={timelineRef}
+            caseName={caseName}
             subjects={subjects}
             evidence={evidence}
             analysis={analysis}
@@ -115,16 +132,17 @@ export function CaseWebPage() {
       <AddEvidenceModal
         open={modalOpen}
         subjects={subjects}
-        evidence={evidence} // ADDED line 99: location-combobox needs the full evidence list for per-location counts
+        evidence={evidence}
         onClose={() => setModalOpen(false)}
         onSubmit={(input) => addEvidence(input)}
-        onAddSubject={addSubject} // ADDED line 101: wired to the new store action
+        onAddSubject={addSubject}
       />
 
       <EventPathModal
         open={pathSubjectId !== null}
         subjects={subjects}
         evidence={evidence}
+        analysis={analysis}
         subjectId={pathSubjectId}
         onChangeSubject={setPathSubjectId}
         onSelectEvidence={(id) => {
@@ -136,35 +154,23 @@ export function CaseWebPage() {
   );
 }
 
-function ShowEventPathButton({
-  subjectName,
-  pointCount,
-  onClick,
-}: {
-  subjectName: string | undefined;
-  pointCount: number;
-  onClick: () => void;
-}) {
-  const enabled = pointCount >= MIN_ROUTE_POINTS;
-  const title = !subjectName
-    ? "No subject has enough located evidence for a path"
-    : enabled
-      ? `Show ${subjectName}'s ${pointCount} located events in chronological order`
-      : pointCount === 1
-        ? `${subjectName} has only one located event — see it in the evidence detail panel`
-        : `${subjectName} has no evidence with coordinates`;
-
+// UPDATED: was `ShowPathButton({ active, enabled, onClick })`, which toggled between "Show path →" and
+// "← Back to timeline" for the in-place PathView. The "active" concept is gone — this always opens the
+// pop-out — but the button keeps its current visual styling (motion press feedback, accent fill, focus
+// ring) per "Keep: button hover/press/focus feedback."
+function ShowPathButton({ enabled, onClick }: { enabled: boolean; onClick: () => void }) {
   return (
-    <button
+    <motion.button
       type="button"
+      whileTap={enabled ? { scale: 0.95 } : undefined}
       disabled={!enabled}
       onClick={onClick}
-      title={title}
-      className="flex items-center gap-1.5 rounded border border-neutral-700 px-3 py-1.5 text-sm text-neutral-200 hover:border-neutral-500 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600"
+      title={enabled ? "Show the current subject's path on a map" : "No subject has enough located evidence for a path"}
+      className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+      style={{ background: "var(--accent)", color: "var(--accent-text)" }}
     >
       <Route size={14} />
-      {enabled ? "Show Event Path" : "No Event Path"}
-      {subjectName && <span className="text-xs text-neutral-500">· {subjectName}</span>}
-    </button>
+      Show path →
+    </motion.button>
   );
 }

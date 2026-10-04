@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import type { ComponentType } from "react";
-import { Camera, CreditCard, FileText, Film, HelpCircle, Image as ImageIcon, MapPin, MessageSquareText, Paperclip } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
+import { Camera, CreditCard, FileText, Film, HelpCircle, Image as ImageIcon, MapPin, MessageSquareText, Paperclip } from "lucide-react"; // UPDATED line 4: removed the `Plus` icon import — the card's "+" button is gone, clicking the card now does the job
 import type { CaseAnalysis, Evidence, EvidenceType, Subject } from "../types";
-import { formatClock, formatClockWithSeconds } from "../timeUtils";
+import { formatEvidenceTimeLabel } from "../timeUtils";
 import { CARD_HEIGHT, CARD_WIDTH, type CardPosition } from "./cardLayout";
+import { subjectColorFor } from "./subjectColors";
+import { STATUS_COLORS } from "./statusColors";
 
 interface EvidenceCardProps {
   evidence: Evidence;
@@ -13,7 +16,9 @@ interface EvidenceCardProps {
   isSelected: boolean;
   isDimmed: boolean;
   isNew: boolean;
-  onClick: () => void;
+  /** True for ~900ms after this card was jumped to from the sidebar list. */
+  isFlashing: boolean;
+  onSelect: () => void; // DELETED line 22: `onOpenDetail: () => void;` — the drawer and its "+" trigger are gone; onSelect alone now shows the card's details (bottom panel)
 }
 
 type IconComponent = ComponentType<{ size?: number | string; className?: string }>;
@@ -28,11 +33,14 @@ const TYPE_ICON: Record<EvidenceType, IconComponent> = {
   other: HelpCircle,
 };
 
-const SUBJECT_COLOR: Record<Subject["kind"], string> = {
-  person: "#38bdf8",
-  phone: "#a78bfa",
-  vehicle: "#fbbf24",
-  other: "#94a3b8",
+const TYPE_LABEL: Record<EvidenceType, string> = {
+  witness: "Witness",
+  cctv: "CCTV",
+  image: "Image",
+  video: "Video",
+  document: "Document",
+  transaction: "Transaction",
+  other: "Other",
 };
 
 function initials(name: string): string {
@@ -44,69 +52,107 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-function formatCardTime(e: Evidence): { main: string; sub?: string } {
-  if (e.timeCertainty === "exact") return { main: formatClockWithSeconds(e.eventTime) };
-  if (e.timeCertainty === "range") {
-    return { main: `${formatClock(e.earliestPossibleTime)}–${formatClock(e.latestPossibleTime)}` };
-  }
-  const marginMin = Math.round(
-    (new Date(e.latestPossibleTime).getTime() - new Date(e.eventTime).getTime()) / 60_000
-  );
-  return { main: `~${formatClock(e.eventTime)}`, sub: marginMin > 0 ? `±${marginMin}` : undefined };
+function formatCardTimeSub(e: Evidence): string | undefined {
+  if (e.timeCertainty !== "approximate") return undefined;
+  const marginMin = Math.round((new Date(e.latestPossibleTime).getTime() - new Date(e.eventTime).getTime()) / 60_000);
+  return marginMin > 0 ? `±${marginMin}` : undefined;
 }
 
-/** One evidence card. Position/size come from cardLayout; a CSS transition on left/top makes later cards slide over when a new one is inserted. */
-export function EvidenceCard({ evidence, subjects, position, analysis, isSelected, isDimmed, isNew, onClick }: EvidenceCardProps) {
-  const [entered, setEntered] = useState(!isNew);
+/**
+ * One evidence card. Position comes from cardLayout as x/y; motion
+ * animates those as transforms so cards glide when an hour collapses or
+ * new evidence shifts the column order, instead of jumping. The whole
+ * card is filled with its subject's color; conflict/selection show as
+ * outer rings rather than changing the fill.
+ */
+export function EvidenceCard({ evidence, subjects, position, analysis, isSelected, isDimmed, isNew, isFlashing, onSelect }: EvidenceCardProps) {
+  const reduceMotion = useReducedMotion();
+  const [pulsing, setPulsing] = useState(isNew);
 
   useEffect(() => {
     if (!isNew) return;
-    const raf = requestAnimationFrame(() => setEntered(true));
-    return () => cancelAnimationFrame(raf);
+    const t = setTimeout(() => setPulsing(false), 1000);
+    return () => clearTimeout(t);
   }, [isNew]);
 
+  const subject = subjects.find((s) => s.id === evidence.subjectId);
   const Icon = TYPE_ICON[evidence.evidenceType] ?? HelpCircle;
-  const time = formatCardTime(evidence);
+  const typeLabel = TYPE_LABEL[evidence.evidenceType] ?? "Other";
+  const timeMain = formatEvidenceTimeLabel(evidence);
+  const timeSub = formatCardTimeSub(evidence);
 
   const inConflict = analysis.conflicts.some((c) => c.evidenceIds.includes(evidence.id));
   const inLink = analysis.corroborations.some((c) => c.evidenceIds.includes(evidence.id));
   const inAi = analysis.aiSuggestions.some((s) => s.status === "pending" && s.evidenceIds.includes(evidence.id));
+  // At most one status badge: conflict takes priority over linked.
+  const statusBadge = inConflict ? "conflict" : inLink ? "linked" : null;
+  const showAiBadge = inAi && !inConflict;
 
-  const avatarSubjectIds = Array.from(
-    new Set([evidence.subjectId, ...(evidence.involvedParties ?? []).map((p) => p.subjectId)])
-  );
+  const avatarSubjectIds = Array.from(new Set([evidence.subjectId, ...(evidence.involvedParties ?? []).map((p) => p.subjectId)]));
   const shownAvatars = avatarSubjectIds.slice(0, 3);
   const overflowCount = avatarSubjectIds.length - shownAvatars.length;
 
-  const borderColor = isSelected ? "#22c55e" : inConflict ? "#ef4444" : "#3f3f46";
+  const color = subjectColorFor(subjects, evidence.subjectId);
+  const isLightText = color.text === "#FFFFFF";
+  const iconSquareBg = isLightText ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.12)";
+
+  // Conflict ring sits closest to the card; a selected card adds a second black ring stacked outside it.
+  const ringShadows = [
+    inConflict ? `0 0 0 2.5px ${STATUS_COLORS.conflictRing}` : null,
+    isSelected ? `0 0 0 ${inConflict ? "5.5" : "3"}px ${STATUS_COLORS.selectionRing}` : null,
+  ].filter(Boolean);
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, scale: 0.85 }}
+      animate={{ x: position.x, y: position.y, opacity: isDimmed ? 0.25 : 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.85 }}
+      whileHover={{ y: position.y - 2 }}
+      transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 400, damping: 35 }}
       onClick={(e) => {
         e.stopPropagation();
-        onClick();
+        onSelect();
       }}
-      className="absolute cursor-pointer overflow-hidden rounded-lg border-2 bg-neutral-900 p-2 shadow-sm transition-[left,top,opacity,transform] duration-300 hover:-translate-y-0.5"
+      className="absolute cursor-pointer overflow-hidden rounded-lg p-2 shadow-sm"
       style={{
-        left: position.x,
-        top: position.y,
+        left: 0,
+        top: 0,
         width: CARD_WIDTH,
         height: CARD_HEIGHT,
-        borderColor,
-        opacity: entered ? (isDimmed ? 0.25 : 1) : 0,
+        background: color.bg,
+        color: color.text,
+        boxShadow: ringShadows.length > 0 ? ringShadows.join(", ") : undefined,
       }}
     >
-      <div className="flex items-center gap-1 text-[10px] font-medium text-neutral-300">
-        <Icon size={11} className="flex-shrink-0 text-sky-400" />
-        <span className="truncate">{evidence.source}</span>
-      </div>
+      {pulsing && (
+        <motion.div
+          className="pointer-events-none absolute inset-0 rounded-lg"
+          style={{ boxShadow: `0 0 0 2px ${STATUS_COLORS.selectionRing}` }}
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: reduceMotion ? 0 : 1 }}
+        />
+      )}
+      {isFlashing && (
+        <motion.div
+          key="flash"
+          className="pointer-events-none absolute inset-0 rounded-lg"
+          style={{ boxShadow: "0 0 0 2px var(--accent)" }}
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: reduceMotion ? 0 : 0.9 }}
+        />
+      )}
 
-      <div className="mt-1 flex items-baseline gap-1">
-        <span className="font-mono text-[13px] font-bold text-neutral-100">{time.main}</span>
-        {time.sub && <span className="font-mono text-[9px] text-neutral-500">{time.sub}</span>}
+      <div className="flex items-start justify-between gap-1">
+        <span className="font-mono text-[15px] font-medium">{timeMain}</span>
+        <span title={typeLabel} className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded" style={{ background: iconSquareBg }}>
+          <Icon size={11} />
+        </span>
       </div>
+      {timeSub && <span className="-mt-0.5 block font-mono text-[9px] opacity-80">{timeSub}</span>}
 
-      <div className="mt-1 flex items-center gap-1 text-[10px] text-neutral-500">
+      <div className="mt-1 flex items-center gap-1 text-[12px] opacity-90">
         <MapPin size={9} className="flex-shrink-0" />
         <span className="truncate">{evidence.location.name}</span>
       </div>
@@ -115,19 +161,23 @@ export function EvidenceCard({ evidence, subjects, position, analysis, isSelecte
         <div className="flex items-center -space-x-1">
           {shownAvatars.map((id) => {
             const s = subjects.find((su) => su.id === id);
+            const avatarColor = subjectColorFor(subjects, id);
             return (
               <span
                 key={id}
                 title={s?.name}
-                className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border border-neutral-900 text-[7px] font-bold text-neutral-900"
-                style={{ backgroundColor: s ? SUBJECT_COLOR[s.kind] : SUBJECT_COLOR.other }}
+                className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[7px] font-bold"
+                style={{ backgroundColor: avatarColor.bg, color: avatarColor.text, border: "1px solid rgba(0,0,0,0.25)" }}
               >
                 {s ? initials(s.name) : "?"}
               </span>
             );
           })}
           {overflowCount > 0 && (
-            <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border border-neutral-900 bg-neutral-700 text-[7px] font-bold text-neutral-200">
+            <span
+              className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[7px] font-bold"
+              style={{ background: "rgba(255,255,255,0.85)", color: "#111111", border: "1px solid rgba(0,0,0,0.25)" }}
+            >
               +{overflowCount}
             </span>
           )}
@@ -135,16 +185,30 @@ export function EvidenceCard({ evidence, subjects, position, analysis, isSelecte
 
         <div className="flex flex-shrink-0 items-center gap-1">
           {evidence.attachments && evidence.attachments.length > 0 && (
-            <span className="flex items-center gap-0.5 text-[9px] text-neutral-500">
+            <span className="flex items-center gap-0.5 text-[9px] opacity-90">
               <Paperclip size={9} />
               {evidence.attachments.length}
             </span>
           )}
-          {inConflict && <span className="rounded bg-red-500/20 px-1 text-[8px] font-semibold text-red-400">conflict</span>}
-          {inLink && <span className="rounded bg-emerald-500/20 px-1 text-[8px] font-semibold text-emerald-400">linked</span>}
-          {!inConflict && inAi && <span className="rounded bg-sky-500/20 px-1 text-[8px] font-semibold text-sky-400">AI</span>}
+          {statusBadge === "conflict" && (
+            <span className="rounded bg-white px-1 text-[8px] font-semibold" style={{ color: STATUS_COLORS.conflict }}>
+              conflict
+            </span>
+          )}
+          {statusBadge === "linked" && (
+            <span className="rounded bg-white px-1 text-[8px] font-semibold" style={{ color: STATUS_COLORS.linked }}>
+              linked
+            </span>
+          )}
+          {showAiBadge && (
+            <span className="rounded bg-white px-1 text-[8px] font-semibold" style={{ color: STATUS_COLORS.ai }}>
+              AI
+            </span>
+          )}
+          {/* DELETED lines 208-220: the white "+" button that opened the slide-out drawer — removed per
+              "Remove the '+' button from the cards, since clicking the card does the job." */}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

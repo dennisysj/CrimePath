@@ -17,7 +17,7 @@ interface StepDetailsProps {
 }
 
 const inputClass =
-  "w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-neutral-100 placeholder:text-neutral-600 focus:border-sky-500 focus:outline-none";
+  "w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[var(--text)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none";
 
 const CERTAINTIES: TimeCertainty[] = ["exact", "approximate", "range"];
 const SUBJECT_KINDS: SubjectKind[] = ["person", "vehicle", "phone", "other"];
@@ -89,15 +89,17 @@ export function StepDetails({
   return (
     <div className="space-y-3 text-sm">
       {sourceOption && SourceIcon && (
-        <div className="flex items-center justify-between rounded-md border border-sky-800/50 bg-sky-500/10 px-3 py-1.5">
-          <span className="flex items-center gap-1.5 text-sky-300">
+        // UPDATED line 92: rgba was (47,91,234) — matches new --accent #3D6AF2
+        <div className="flex items-center justify-between rounded-md border px-3 py-1.5" style={{ borderColor: "var(--border)", background: "rgba(61,106,242,0.08)" }}>
+          <span className="flex items-center gap-1.5" style={{ color: "var(--accent)" }}>
             <SourceIcon size={14} />
             {sourceOption.label}
           </span>
           <button
             type="button"
             onClick={onBackToSource}
-            className="text-xs text-sky-400 underline hover:text-sky-300"
+            className="text-xs underline hover:brightness-110 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+            style={{ color: "var(--accent)" }}
           >
             change
           </button>
@@ -105,7 +107,7 @@ export function StepDetails({
       )}
 
       <div>
-        <span className="mb-1 block text-xs text-neutral-400">Subject</span>
+        <span className="mb-1 block text-xs" style={{ color: "var(--text-muted)" }}>Subject</span>
         {!newSubjectOpen ? (
           <div className="flex gap-2">
             <select
@@ -125,13 +127,14 @@ export function StepDetails({
             <button
               type="button"
               onClick={() => setNewSubjectOpen(true)}
-              className="flex-shrink-0 whitespace-nowrap rounded border border-neutral-700 px-2 py-1.5 text-xs text-neutral-300 hover:border-neutral-500"
+              className="flex-shrink-0 whitespace-nowrap rounded border px-2 py-1.5 text-xs hover:brightness-95 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+              style={{ borderColor: "var(--border)", color: "var(--text)" }}
             >
               + New subject
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-2 rounded border border-neutral-700 bg-neutral-950 p-2">
+          <div className="flex items-center gap-2 rounded border p-2" style={{ borderColor: "var(--border)", background: "var(--bg)" }}>
             <input
               value={newSubjectName}
               onChange={(e) => setNewSubjectName(e.target.value)}
@@ -153,14 +156,16 @@ export function StepDetails({
               type="button"
               onClick={handleSaveNewSubject}
               disabled={!newSubjectName.trim() || savingSubject}
-              className="flex-shrink-0 rounded bg-sky-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex-shrink-0 rounded px-2 py-1.5 text-xs font-medium hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+              style={{ background: "var(--accent)", color: "var(--accent-text)" }}
             >
               Save
             </button>
             <button
               type="button"
               onClick={() => setNewSubjectOpen(false)}
-              className="flex-shrink-0 text-xs text-neutral-500 hover:text-neutral-300"
+              className="flex-shrink-0 text-xs hover:brightness-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+              style={{ color: "var(--text-muted)" }}
             >
               Cancel
             </button>
@@ -170,7 +175,7 @@ export function StepDetails({
 
       {/* ADDED: "Also involved" — optional, never blocks Next */}
       <div>
-        <span className="mb-1 block text-xs text-neutral-400">Also involved (optional)</span>
+        <span className="mb-1 block text-xs" style={{ color: "var(--text-muted)" }}>Also involved (optional)</span>
         <div className="space-y-2">
           {draft.involvedParties.map((party, index) => {
             const used = new Set(draft.involvedParties.filter((_, i) => i !== index).map((p) => p.subjectId));
@@ -221,7 +226,8 @@ export function StepDetails({
                       type="button"
                       onClick={handleSaveInvolvedNewSubject}
                       disabled={!involvedNewSubjectName.trim()}
-                      className="flex-shrink-0 rounded bg-sky-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex-shrink-0 rounded px-2 py-1.5 text-xs font-medium hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+                      style={{ background: "var(--accent)", color: "var(--accent-text)" }}
                     >
                       Save
                     </button>
@@ -244,7 +250,8 @@ export function StepDetails({
                   type="button"
                   onClick={() => removeInvolvedRow(index)}
                   aria-label="Remove involved party"
-                  className="flex-shrink-0 rounded p-1.5 text-neutral-500 hover:bg-neutral-800 hover:text-red-400"
+                  className="flex-shrink-0 rounded p-1.5 hover:bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--conflict-ring)]"
+                  style={{ color: "var(--text-muted)" }}
                 >
                   <X size={13} />
                 </button>
@@ -255,23 +262,23 @@ export function StepDetails({
         <button
           type="button"
           onClick={addInvolvedRow}
-          className="mt-2 rounded border border-dashed border-neutral-700 px-2 py-1 text-xs text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"
+          className="mt-2 rounded border border-dashed px-2 py-1 text-xs hover:brightness-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+          style={{ borderColor: "var(--border-strong)", color: "var(--text-muted)" }}
         >
           + Add involved party
         </button>
       </div>
 
       <div>
-        <span className="mb-1 block text-xs text-neutral-400">When</span>
-        <div className="mb-2 flex gap-1 rounded border border-neutral-700 bg-neutral-950 p-0.5 text-xs">
+        <span className="mb-1 block text-xs" style={{ color: "var(--text-muted)" }}>When</span>
+        <div className="mb-2 flex gap-1 rounded border p-0.5 text-xs" style={{ borderColor: "var(--border)", background: "var(--bg)" }}>
           {CERTAINTIES.map((c) => (
             <button
               key={c}
               type="button"
               onClick={() => onChangeDraft({ certainty: c })}
-              className={`flex-1 rounded px-2 py-1 capitalize transition-colors ${
-                draft.certainty === c ? "bg-sky-600 text-white" : "text-neutral-400 hover:text-neutral-200"
-              }`}
+              className="flex-1 rounded px-2 py-1 capitalize transition-colors hover:brightness-110 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+              style={draft.certainty === c ? { background: "var(--accent)", color: "var(--accent-text)" } : { color: "var(--text-muted)" }}
             >
               {c}
             </button>
@@ -300,7 +307,7 @@ export function StepDetails({
                 onChange={(v) => onChangeDraft({ approxTime: v })}
                 withSeconds={false}
               />
-              <div className="flex items-center gap-1 whitespace-nowrap text-xs text-neutral-400">
+              <div className="flex items-center gap-1 whitespace-nowrap text-xs" style={{ color: "var(--text-muted)" }}>
                 <span>±</span>
                 <input
                   type="number"
@@ -317,7 +324,7 @@ export function StepDetails({
               onChange={(v) => onChangeDraft({ approxTime: v })}
               withSeconds={false}
             />
-            {preview && <p className="font-mono text-[11px] text-neutral-500">→ {preview}</p>}
+            {preview && <p className="font-mono text-[11px]" style={{ color: "var(--text-muted)" }}>→ {preview}</p>}
           </div>
         )}
 
@@ -328,14 +335,14 @@ export function StepDetails({
               onChange={(v) => onChangeDraft({ rangeStart: v })}
               withSeconds={false}
             />
-            <span className="text-neutral-500">to</span>
+            <span style={{ color: "var(--text-muted)" }}>to</span>
             <ClockFields value={draft.rangeEnd} onChange={(v) => onChangeDraft({ rangeEnd: v })} withSeconds={false} />
           </div>
         )}
       </div>
 
       <div>
-        <span className="mb-1 block text-xs text-neutral-400">Location</span>
+        <span className="mb-1 block text-xs" style={{ color: "var(--text-muted)" }}>Location</span>
         <LocationCombobox
           value={draft.locationName}
           locationStats={locationStats}
@@ -374,7 +381,7 @@ function ClockFields({ value, onChange, withSeconds }: ClockFieldsProps) {
         inputMode="numeric"
         className={`${inputClass} w-11 text-center font-mono`}
       />
-      <span className="text-neutral-500">:</span>
+      <span style={{ color: "var(--text-muted)" }}>:</span>
       <input
         value={value.minute}
         onChange={(e) => onChange({ ...value, minute: clampNumeric(e.target.value, 59) })}
@@ -385,7 +392,7 @@ function ClockFields({ value, onChange, withSeconds }: ClockFieldsProps) {
       />
       {withSeconds && (
         <>
-          <span className="text-neutral-500">:</span>
+          <span style={{ color: "var(--text-muted)" }}>:</span>
           <input
             value={value.second}
             onChange={(e) => onChange({ ...value, second: clampNumeric(e.target.value, 59) })}
@@ -396,15 +403,14 @@ function ClockFields({ value, onChange, withSeconds }: ClockFieldsProps) {
           />
         </>
       )}
-      <div className="ml-1 flex gap-0.5 rounded border border-neutral-700 bg-neutral-950 p-0.5 text-xs">
+      <div className="ml-1 flex gap-0.5 rounded border p-0.5 text-xs" style={{ borderColor: "var(--border)", background: "var(--bg)" }}>
         {(["AM", "PM"] as ClockPeriod[]).map((p) => (
           <button
             key={p}
             type="button"
             onClick={() => onChange({ ...value, period: p })}
-            className={`rounded px-1.5 py-0.5 ${
-              value.period === p ? "bg-sky-600 text-white" : "text-neutral-400 hover:text-neutral-200"
-            }`}
+            className="rounded px-1.5 py-0.5 hover:brightness-110 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+            style={value.period === p ? { background: "var(--accent)", color: "var(--accent-text)" } : { color: "var(--text-muted)" }}
           >
             {p}
           </button>

@@ -108,38 +108,38 @@ export function StepUploads({ draft, subjects, onChangeDraft, onBackToDetails }:
 
   return (
     <div className="space-y-4 text-sm">
-      <div className="rounded-md border border-neutral-800 bg-neutral-950/60 p-3">
+      <div className="rounded-md border p-3" style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}>
         <div className="mb-1.5 flex items-center justify-between">
-          <span className="flex items-center gap-1.5 font-medium text-neutral-100">
-            {SourceIcon && <SourceIcon size={14} className="text-sky-400" />}
+          <span className="flex items-center gap-1.5 font-medium" style={{ color: "var(--text)" }}>
+            {SourceIcon && <SourceIcon size={14} className="text-[var(--accent)]" />}
             {sourceOption?.label}
           </span>
-          <button type="button" onClick={onBackToDetails} className="text-xs text-sky-400 underline hover:text-sky-300">
+          <button type="button" onClick={onBackToDetails} className="text-xs underline hover:brightness-110 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]" style={{ color: "var(--accent)" }}>
             edit
           </button>
         </div>
-        <dl className="space-y-0.5 font-mono text-xs text-neutral-400">
+        <dl className="space-y-0.5 font-mono text-xs" style={{ color: "var(--text-muted)" }}>
           <div className="flex gap-2">
-            <dt className="w-16 flex-shrink-0 text-neutral-600">Subject</dt>
+            <dt className="w-16 flex-shrink-0" style={{ color: "var(--text-muted)" }}>Subject</dt>
             <dd>{subject?.name ?? "—"}</dd>
           </div>
           <div className="flex gap-2">
-            <dt className="w-16 flex-shrink-0 text-neutral-600">When</dt>
+            <dt className="w-16 flex-shrink-0" style={{ color: "var(--text-muted)" }}>When</dt>
             <dd>{whenLabel || "—"}</dd>
           </div>
           <div className="flex gap-2">
-            <dt className="w-16 flex-shrink-0 text-neutral-600">Location</dt>
+            <dt className="w-16 flex-shrink-0" style={{ color: "var(--text-muted)" }}>Location</dt>
             <dd>{draft.locationName || "—"}</dd>
           </div>
           {draft.involvedParties.length > 0 && (
             <div className="flex gap-2">
-              <dt className="w-16 flex-shrink-0 text-neutral-600">Involved</dt>
+              <dt className="w-16 flex-shrink-0" style={{ color: "var(--text-muted)" }}>Involved</dt>
               <dd className="space-y-0.5">
                 {draft.involvedParties.map((p, i) => {
                   const s = subjects.find((su) => su.id === p.subjectId);
                   return (
                     <div key={i}>
-                      {s?.name ?? "—"} <span className="text-neutral-600">({ROLE_LABELS[p.role]})</span>
+                      {s?.name ?? "—"} <span style={{ color: "var(--text-muted)" }}>({ROLE_LABELS[p.role]})</span>
                     </div>
                   );
                 })}
@@ -150,7 +150,7 @@ export function StepUploads({ draft, subjects, onChangeDraft, onBackToDetails }:
       </div>
 
       <div>
-        <span className="mb-1 block text-xs text-neutral-400">Description (optional)</span>
+        <span className="mb-1 block text-xs" style={{ color: "var(--text-muted)" }}>Description (optional)</span>
         <textarea
           value={draft.notes}
           onChange={(e) => {
@@ -159,23 +159,27 @@ export function StepUploads({ draft, subjects, onChangeDraft, onBackToDetails }:
           }}
           rows={3}
           placeholder='e.g. "I saw Person A near Metrotown around 9pm."'
-          className="w-full resize-none rounded border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-neutral-100 placeholder:text-neutral-600 focus:border-sky-500 focus:outline-none"
+          className="w-full resize-none rounded border px-2 py-1.5 focus:outline-none"
+          style={{ borderColor: "var(--border)", background: "var(--bg)", color: "var(--text)" }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
         />
         <button
           type="button"
           onClick={handleAutoFill}
           disabled={!canAutoFill}
           title="Mock AI extraction — a heuristic over the text above, not a real Gemini call"
-          className="mt-1.5 flex items-center gap-1.5 rounded border border-sky-700/50 bg-sky-500/10 px-2 py-1.5 text-xs font-medium text-sky-300 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:border-neutral-700 disabled:bg-transparent disabled:text-neutral-500"
+          className="mt-1.5 flex items-center gap-1.5 rounded border px-2 py-1.5 text-xs font-medium hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+          style={{ borderColor: "var(--accent)", background: "rgba(61,106,242,0.1)", color: "var(--accent)" }} /* UPDATED line 173: rgba was (47,91,234) */
         >
           <Sparkles size={13} />
           Auto-fill from description
         </button>
-        {autoFillMessage && <p className="mt-1 text-[11px] text-neutral-500">{autoFillMessage}</p>}
+        {autoFillMessage && <p className="mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>{autoFillMessage}</p>}
       </div>
 
       <div>
-        <span className="mb-1 block text-xs text-neutral-400">Upload files (optional)</span>
+        <span className="mb-1 block text-xs" style={{ color: "var(--text-muted)" }}>Upload files (optional)</span>
         <input
           ref={fileInputRef}
           type="file"
@@ -196,17 +200,14 @@ export function StepUploads({ draft, subjects, onChangeDraft, onBackToDetails }:
           onDragLeave={() => setDragActive(false)}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
-          className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-3 py-6 text-center transition-colors ${
-            dragActive
-              ? "border-sky-500 bg-sky-500/10"
-              : "border-neutral-700 hover:border-neutral-500 hover:bg-neutral-900/50"
-          }`}
+          className="flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed px-3 py-6 text-center transition-colors hover:brightness-95"
+          style={dragActive ? { borderColor: "var(--accent)", background: "rgba(61,106,242,0.08)" } : { borderColor: "var(--border-strong)" }} /* UPDATED line 204: rgba was (47,91,234) */
         >
-          <UploadCloud size={22} className="text-neutral-500" />
-          <p className="text-xs text-neutral-400">
-            Drag and drop, or <span className="text-sky-400">click to browse</span>
+          <UploadCloud size={22} style={{ color: "var(--text-muted)" }} />
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Drag and drop, or <span style={{ color: "var(--accent)" }}>click to browse</span>
           </p>
-          <p className="text-[11px] text-neutral-600">Images, video, or PDF</p>
+          <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>Images, video, or PDF</p>
         </div>
 
         {draft.attachments.length > 0 && (
@@ -214,24 +215,26 @@ export function StepUploads({ draft, subjects, onChangeDraft, onBackToDetails }:
             {draft.attachments.map((a) => (
               <li
                 key={a.id}
-                className="flex items-center gap-2 rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5"
+                className="flex items-center gap-2 rounded border px-2 py-1.5"
+                style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}
               >
                 {a.mimeType.startsWith("image/") ? (
                   <img src={a.previewUrl} alt="" className="h-8 w-8 flex-shrink-0 rounded object-cover" />
                 ) : (
-                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded bg-neutral-800 text-neutral-500">
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded" style={{ background: "var(--surface)", color: "var(--text-muted)" }}>
                     {a.mimeType.startsWith("video/") ? <Film size={15} /> : <FileText size={15} />}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs text-neutral-300">{a.name}</p>
-                  <p className="font-mono text-[10px] text-neutral-600">{formatBytes(a.size)}</p>
+                  <p className="truncate text-xs" style={{ color: "var(--text)" }}>{a.name}</p>
+                  <p className="font-mono text-[10px]" style={{ color: "var(--text-muted)" }}>{formatBytes(a.size)}</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => removeAttachment(a.id)}
                   aria-label="Remove attachment"
-                  className="flex-shrink-0 rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-red-400"
+                  className="flex-shrink-0 rounded p-1 hover:bg-[var(--surface)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--conflict-ring)]"
+                  style={{ color: "var(--text-muted)" }}
                 >
                   <X size={13} />
                 </button>

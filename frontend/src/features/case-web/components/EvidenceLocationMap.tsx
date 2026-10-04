@@ -11,14 +11,14 @@ export function EvidenceLocationMap({ evidence }: { evidence: Evidence }) {
 
   return (
     <div className="mb-3">
-      <h3 className="mb-1 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+      <h3 className="mb-1 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
         <MapPin size={11} /> Location
       </h3>
 
       {coords ? (
         <div className="grid gap-3 md:grid-cols-[14rem_minmax(0,1fr)]">
           <div>
-            <p className="mb-1.5 text-sm text-neutral-200">{evidence.location.name}</p>
+            <p className="mb-1.5 text-sm" style={{ color: "var(--text)" }}>{evidence.location.name}</p>
             <dl className="space-y-1 font-mono text-xs">
               <Field label="Time" value={formatClockWithSeconds(evidence.eventTime)} />
               <Field label="Lat" value={coords.lat.toFixed(6)} />
@@ -29,7 +29,8 @@ export function EvidenceLocationMap({ evidence }: { evidence: Evidence }) {
               href={buildGoogleMapsLocationUrl({ latitude: coords.lat, longitude: coords.lng }) ?? undefined}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-2 inline-flex items-center gap-1 text-[11px] text-sky-400 hover:text-sky-300"
+              className="mt-2 inline-flex items-center gap-1 text-[11px] hover:brightness-110"
+              style={{ color: "var(--accent)" }}
             >
               Open in Google Maps <ExternalLink size={10} />
             </a>
@@ -39,15 +40,16 @@ export function EvidenceLocationMap({ evidence }: { evidence: Evidence }) {
             longitude={coords.lng}
             zoom={15}
             heightClass="h-44"
+            // UPDATED line 43: was "light" — restored to match the original EvidenceLocationMap (HEAD d99c4fe) for the dark theme
             variant="dark"
             scrollWheelZoom={false}
           />
         </div>
       ) : (
-        <p className="rounded border border-dashed border-neutral-800 px-3 py-2 text-xs text-neutral-500">
+        <p className="rounded border border-dashed px-3 py-2 text-xs" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
           No locational data
           {evidence.location?.name ? (
-            <span className="text-neutral-600"> — reported as "{evidence.location.name}", no coordinates</span>
+            <span style={{ color: "var(--text-muted)" }}> — reported as "{evidence.location.name}", no coordinates</span>
           ) : null}
         </p>
       )}
@@ -58,8 +60,8 @@ export function EvidenceLocationMap({ evidence }: { evidence: Evidence }) {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex gap-2">
-      <dt className="w-12 flex-shrink-0 text-neutral-600">{label}</dt>
-      <dd className="text-neutral-300">{value}</dd>
+      <dt className="w-12 flex-shrink-0" style={{ color: "var(--text-muted)" }}>{label}</dt>
+      <dd style={{ color: "var(--text)" }}>{value}</dd>
     </div>
   );
 }

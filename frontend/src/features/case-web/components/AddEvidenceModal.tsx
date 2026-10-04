@@ -3,6 +3,7 @@
 // investigator can still review every field before submitting.
 import { useEffect, useMemo, useState } from "react";
 import { Check } from "lucide-react";
+import { toast } from "sonner"; // ADDED: "Added to the timeline" toast on successful submit
 import type { Evidence, EvidenceType, Subject, SubjectKind } from "../types";
 import { extractEvidenceDraft } from "../extractApi";
 import { getEvidenceCoordinates } from "../locationUtils";
@@ -231,22 +232,25 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
     setSubmittedAttachmentCount(draft.attachments.length);
     setDraft(EMPTY_DRAFT);
     setSubmitted(true);
+    toast.success("Added to the timeline"); // ADDED: sonner toast alongside the modal's own success screen
   }
 
   const step2Valid = isStep2Valid(draft);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={handleClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={handleClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900 shadow-xl"
+        className="w-full max-w-md overflow-hidden rounded-lg border shadow-xl"
+        style={{ borderColor: "var(--border)", background: "var(--surface)" }}
       >
-        <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-4">
-          <h2 className="text-sm font-semibold text-neutral-100">Add evidence</h2>
+        <div className="flex items-center justify-between border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
+          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Add evidence</h2>
           <button
             type="button"
             onClick={handleClose}
-            className="text-neutral-500 hover:text-neutral-200"
+            className="hover:brightness-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+            style={{ color: "var(--text-muted)" }}
             aria-label="Close"
           >
             ✕
@@ -255,11 +259,11 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
 
         {submitted ? (
           <div className="flex flex-col items-center gap-3 px-5 py-10 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full" style={{ background: "rgba(39,80,10,0.12)", color: "#27500A" }}>
               <Check size={24} />
             </div>
-            <p className="text-sm font-medium text-neutral-100">Added to the timeline</p>
-            <p className="text-xs text-neutral-500">
+            <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Added to the timeline</p>
+            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
               {submittedAttachmentCount > 0
                 ? `${submittedAttachmentCount} attachment${submittedAttachmentCount === 1 ? "" : "s"} included.`
                 : "No attachments included."}
@@ -268,14 +272,16 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
               <button
                 type="button"
                 onClick={handleAddAnother}
-                className="rounded border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 hover:border-neutral-500"
+                className="rounded border px-3 py-1.5 text-sm hover:brightness-95 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+                style={{ borderColor: "var(--border)", color: "var(--text)" }}
               >
                 Add another
               </button>
               <button
                 type="button"
                 onClick={handleClose}
-                className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500"
+                className="rounded px-3 py-1.5 text-sm font-medium hover:brightness-110 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+                style={{ background: "var(--accent)", color: "var(--accent-text)" }}
               >
                 Close
               </button>
@@ -283,34 +289,36 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-center gap-1.5 border-b border-neutral-800 px-5 py-3 text-xs">
+            <div className="flex items-center justify-center gap-1.5 border-b px-5 py-3 text-xs" style={{ borderColor: "var(--border)" }}>
               {ALL_STEPS.map((s, i) => (
                 <div key={s} className="flex items-center gap-1.5">
                   <span
-                    className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold ${
+                    className="flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold"
+                    style={
                       s === step
-                        ? "bg-sky-600 text-white"
+                        ? { background: "var(--accent)", color: "var(--accent-text)" }
                         : s < step
-                          ? "bg-sky-600/25 text-sky-300"
-                          : "bg-neutral-800 text-neutral-500"
-                    }`}
+                          ? { background: "rgba(61,106,242,0.15)", color: "var(--accent)" } /* UPDATED line 301: rgba was (47,91,234) — matches new --accent #3D6AF2 */
+                          : { background: "var(--surface-2)", color: "var(--text-muted)" }
+                    }
                   >
                     {s < step ? <Check size={11} /> : s}
                   </span>
-                  <span className={s === step ? "font-medium text-neutral-100" : "text-neutral-500"}>
+                  <span style={{ color: s === step ? "var(--text)" : "var(--text-muted)", fontWeight: s === step ? 500 : 400 }}>
                     {STEP_LABELS[s]}
                   </span>
-                  {i < ALL_STEPS.length - 1 && <span className="px-0.5 text-neutral-600">→</span>}
+                  {i < ALL_STEPS.length - 1 && <span className="px-0.5" style={{ color: "var(--text-muted)" }}>→</span>}
                 </div>
               ))}
             </div>
 
             <div className="max-h-[70vh] overflow-y-auto overflow-x-hidden px-5 py-4 thin-scrollbar">
-              <div className="mb-4 rounded border border-dashed border-neutral-700 p-2">
+              <div className="mb-4 rounded border border-dashed p-2" style={{ borderColor: "var(--border-strong)" }}>
                 <button
                   type="button"
                   onClick={() => setShowDraftBox((value) => !value)}
-                  className="w-full text-left text-xs text-neutral-400 hover:text-neutral-200"
+                  className="w-full text-left text-xs hover:brightness-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+                  style={{ color: "var(--text-muted)" }}
                 >
                   {showDraftBox ? "▾" : "▸"} Paste statement (AI draft) — fills in the fields for you to review
                 </button>
@@ -322,24 +330,28 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
                       onChange={(e) => setDraftText(e.target.value)}
                       placeholder='e.g. "I saw Alex near the bank around 9am, he left heading north."'
                       rows={2}
-                      className="w-full resize-none rounded border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-neutral-100 placeholder:text-neutral-600 focus:border-sky-500 focus:outline-none"
+                      className="w-full resize-none rounded border px-2 py-1.5 focus:outline-none"
+                      style={{ borderColor: "var(--border)", background: "var(--bg)", color: "var(--text)" }}
+                      onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+                      onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
                     />
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={handleExtract}
                         disabled={extracting || !draftText.trim()}
-                        className="rounded bg-neutral-700 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="rounded px-2 py-1 text-xs font-medium hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+                        style={{ background: "var(--primary)", color: "var(--primary-text)" }}
                       >
                         {extracting ? "Extracting…" : "Extract with Gemini"}
                       </button>
                       {draftSubjectName && (
-                        <span className="text-xs text-neutral-500">
-                          Mentioned: <span className="text-neutral-300">{draftSubjectName}</span>
+                        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                          Mentioned: <span style={{ color: "var(--text)" }}>{draftSubjectName}</span>
                         </span>
                       )}
                     </div>
-                    {extractError && <p className="text-xs text-red-400">{extractError}</p>}
+                    {extractError && <p className="text-xs" style={{ color: "var(--conflict)" }}>{extractError}</p>}
                   </div>
                 )}
               </div>
@@ -374,12 +386,13 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
               </div>
             </div>
 
-            <div className="flex items-center justify-between border-t border-neutral-800 px-5 py-3">
+            <div className="flex items-center justify-between border-t px-5 py-3" style={{ borderColor: "var(--border)" }}>
               {step > 1 ? (
                 <button
                   type="button"
                   onClick={() => goTo((step - 1) as WizardStep, "back")}
-                  className="rounded px-3 py-1.5 text-sm text-neutral-400 hover:text-neutral-200"
+                  className="rounded px-3 py-1.5 text-sm hover:brightness-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+                  style={{ color: "var(--text-muted)" }}
                 >
                   ← Back
                 </button>
@@ -391,7 +404,8 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
                 <button
                   type="button"
                   onClick={handleClose}
-                  className="rounded px-3 py-1.5 text-sm text-neutral-400 hover:text-neutral-200"
+                  className="rounded px-3 py-1.5 text-sm hover:brightness-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+                  style={{ color: "var(--text-muted)" }}
                 >
                   Cancel
                 </button>
@@ -402,7 +416,8 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
                   type="button"
                   disabled={!step2Valid}
                   onClick={() => goTo(3, "forward")}
-                  className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+                  className="rounded px-3 py-1.5 text-sm font-medium hover:brightness-110 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+                  style={step2Valid ? { background: "var(--accent)", color: "var(--accent-text)" } : { background: "var(--surface-2)", color: "var(--text-muted)" }}
                 >
                   Next →
                 </button>
@@ -413,7 +428,8 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
                   type="button"
                   disabled={submitting}
                   onClick={handleSubmit}
-                  className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+                  className="rounded px-3 py-1.5 text-sm font-medium hover:brightness-110 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
+                  style={!submitting ? { background: "var(--accent)", color: "var(--accent-text)" } : { background: "var(--surface-2)", color: "var(--text-muted)" }}
                 >
                   {submitting ? "Adding…" : "Add evidence"}
                 </button>

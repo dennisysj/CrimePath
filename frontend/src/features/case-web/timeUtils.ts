@@ -56,3 +56,17 @@ export function formatClockWithSeconds(iso: string): string {
   const ss = String(d.getUTCSeconds()).padStart(2, "0");
   return `${formatClock(iso)}:${ss}`;
 }
+
+// ADDED: shared with the time ruler, so tick labels always read exactly like the card's own time (seconds for exact, "~" for approximate) instead of a separately-rounded label.
+export interface TimedEvidenceLike {
+  timeCertainty: "exact" | "approximate" | "range";
+  eventTime: string;
+  earliestPossibleTime: string;
+  latestPossibleTime: string;
+}
+
+export function formatEvidenceTimeLabel(e: TimedEvidenceLike): string {
+  if (e.timeCertainty === "exact") return formatClockWithSeconds(e.eventTime);
+  if (e.timeCertainty === "range") return `${formatClock(e.earliestPossibleTime)}–${formatClock(e.latestPossibleTime)}`;
+  return `~${formatClock(e.eventTime)}`;
+}
