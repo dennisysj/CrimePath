@@ -11,7 +11,7 @@ import { ExtractEvidenceRequestSchema } from "@crimepath/shared";
 import { assertDatabaseConfigured, pool } from "./db.js";
 import { extractImageMetadata, extractImageMetadataFromBuffer } from "./services/extractImageMetadata.js";
 import { computeCaseAnalysis } from "./services/conflictEngine.js";
-import { extractCrimeFromText, extractEvidenceFromText } from "./services/gemini.js";
+import { extractCrimeFromText, extractEvidenceFromText, generateCaseSummary } from "./services/gemini.js";
 
 const app = express();
 app.use(cors());
@@ -2100,6 +2100,26 @@ app.get("/api/cases/:caseId/analysis", async (req, res) => {
     res.json({ conflicts, gaps, travelLegs, ...insights });
   } catch (error) {
     sendError(res, error, "Failed to load analysis");
+  }
+});
+
+/** Gemini-generated bullet insights over the case's current evidence/conflicts/gaps - regenerated on request, not cached. */
+app.get("/api/cases/:caseId/summary", async (req, res) => {
+  try {
+    assertDatabaseConfigured();
+    const [items, subjectsResult] = await Promise.all([
+      loadCaseItems(req.params.caseId, originOf(req)),
+      pool.query<{ id: string; name: string | null }>(
+        "SELECT subject_id AS id, subject_name AS name FROM case_subjects WHERE case_id = $1",
+        [req.params.caseId]
+      ),
+    ]);
+    const subjects = subjectsResult.rows.map((s) => ({ id: s.id, name: s.name ?? s.id }));
+    const { conflicts, gaps } = await computeCaseAnalysis(req.params.caseId, items, subjects);
+    const bullets = await generateCaseSummary(items, subjects, conflicts, gaps);
+    res.json({ bullets });
+  } catch (error) {
+    sendError(res, error, "Failed to generate summary");
   }
 });
 

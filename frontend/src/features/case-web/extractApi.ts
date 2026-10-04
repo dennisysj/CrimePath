@@ -39,3 +39,14 @@ export async function extractCrimeDraft(text: string): Promise<ExtractCrimeRespo
   }
   return res.json();
 }
+
+/** Gemini-generated bullet insights over the case's current evidence/conflicts/gaps. Regenerated on request, not cached server-side. */
+export async function getCaseSummary(caseId: string): Promise<string[]> {
+  const res = await fetch(`${API_URL}/cases/${caseId}/summary`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `Summary failed (${res.status})`);
+  }
+  const data = (await res.json()) as { bullets: string[] };
+  return data.bullets;
+}
