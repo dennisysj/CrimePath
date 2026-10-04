@@ -22,6 +22,7 @@ import {
   gaps as mockGaps,
   subjects as mockSubjects,
 } from "./mockData";
+import { API_BASE_URL, API_FALLBACK_URL } from "./apiConfig";
 
 export interface CaseWebApi {
   getEvidenceHistory(caseId: string, evidenceId: string): Promise<HistoryEntry[]>;
@@ -53,7 +54,6 @@ export interface CaseWebApi {
 
 const MOCK_DELAY_MS = 300;
 const DEFAULT_CASE_ID = import.meta.env.VITE_CASE_ID ?? "1";
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
 
 export interface UploadedImageMetadata {
   fileName: string;
@@ -319,16 +319,15 @@ class MockCaseWebApi implements CaseWebApi {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...init?.headers,
-      },
-    });
+    response = await fetchJson(API_BASE_URL, path, init);
   } catch {
-    // fetch only rejects when the server can't be reached at all.
-    throw new Error(`Can't reach the backend at ${API_BASE_URL}. Is it running? (npm run dev from the repo root)`);
+    try {
+      response = await fetchJson(API_FALLBACK_URL, path, init);
+    } catch {
+      throw new Error(
+        `Can't reach the backend at ${API_BASE_URL} or fallback ${API_FALLBACK_URL}. Is the Render service awake?`
+      );
+    }
   }
 
   if (!response.ok) {
@@ -344,6 +343,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+function fetchJson(baseUrl: string, path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`${baseUrl}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+  });
 }
 
 /** One recorded change from the database's property-history tables. */
