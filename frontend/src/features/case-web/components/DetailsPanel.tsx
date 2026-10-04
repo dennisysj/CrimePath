@@ -20,12 +20,10 @@ interface DetailsPanelProps {
 const EVIDENCE_TYPE_LABEL: Record<Evidence["evidenceType"], string> = {
   witness: "Witness",
   cctv: "CCTV",
-  gps: "GPS",
-  phone: "Phone",
+  image: "Image", // UPDATED line 18-27: map replaced (was witness/cctv/gps/phone/transaction/transit/police/digital/other)
+  video: "Video",
+  document: "Document",
   transaction: "Transaction",
-  transit: "Transit",
-  police: "Police",
-  digital: "Digital",
   other: "Other",
 };
 
@@ -126,13 +124,13 @@ export function DetailsPanel({
                 {selectedEvidence.attachments.map((a) => (
                   <li key={a.id}>
                     <a
-                      href={a.dataUrl}
+                      href={a.previewUrl} // UPDATED line 105: was a.dataUrl
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 hover:border-neutral-600"
                     >
-                      {a.type.startsWith("image/") ? (
-                        <img src={a.dataUrl} alt="" className="h-9 w-9 flex-shrink-0 rounded object-cover" />
+                      {a.mimeType.startsWith("image/") ? ( // UPDATED line 110: was a.type
+                        <img src={a.previewUrl} alt="" className="h-9 w-9 flex-shrink-0 rounded object-cover" /> // UPDATED line 111: was a.dataUrl
                       ) : (
                         <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded bg-neutral-800 text-neutral-500">
                           <FileText size={16} />

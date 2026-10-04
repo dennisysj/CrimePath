@@ -14,17 +14,22 @@ app.use(cors());
 // an evidence item with a few attachments needs well over the default limit.
 app.use(express.json({ limit: "50mb" }));
 
-const EvidenceTypeSchema = z.enum([
-  "witness",
-  "cctv",
-  "gps",
-  "phone",
-  "transaction",
-  "transit",
-  "police",
-  "digital",
-  "other",
-]);
+const EvidenceTypeSchema = z.enum(["witness", "cctv", "image", "video", "document", "transaction", "other"]);
+type EvidenceType = z.infer<typeof EvidenceTypeSchema>;
+
+/** Evidence types from before the card-timeline UI, still present in older rows. */
+const LEGACY_EVIDENCE_TYPE: Record<string, EvidenceType> = {
+  gps: "other",
+  phone: "other",
+  transit: "other",
+  police: "document",
+  digital: "document",
+};
+
+const InvolvedPartySchema = z.object({
+  subjectId: z.string().min(1),
+  role: z.enum(["with", "vehicle_device", "reported_by", "mentioned"]),
+});
 
 const TimeCertaintySchema = z.enum(["exact", "approximate", "range"]);
 
@@ -48,12 +53,13 @@ const AddEvidenceSchema = z.object({
       z.object({
         id: z.string(),
         name: z.string(),
-        type: z.string(),
+        mimeType: z.string(),
         size: z.number(),
-        dataUrl: z.string(),
+        previewUrl: z.string(),
       })
     )
     .optional(),
+  involvedParties: z.array(InvolvedPartySchema).default([]),
 });
 
 const SubjectKindSchema = z.enum(["person", "vehicle", "phone", "other"]);
@@ -105,6 +111,7 @@ type EvidenceRow = {
   source: string | null;
   notes: string | null;
   attachments: unknown;
+  involved_parties: unknown;
   created_at: string;
 };
 
@@ -328,6 +335,7 @@ const EVIDENCE_SELECT = `
     e.source,
     ce.investigator_notes AS notes,
     e.metadata->'attachments' AS attachments,
+    e.metadata->'involvedParties' AS involved_parties,
     e.created_at
   FROM evidence e
   LEFT JOIN event_evidence ee ON ee.evidence_id = e.evidence_id
@@ -356,7 +364,35 @@ function evidenceMetadata(input: z.infer<typeof AddEvidenceSchema>) {
     earliestPossibleTime: input.earliestPossibleTime,
     latestPossibleTime: input.latestPossibleTime,
     attachments: input.attachments ?? [],
+    involvedParties: input.involvedParties,
   };
+}
+
+type StoredAttachment = {
+  id?: string;
+  name?: string;
+  mimeType?: string;
+  previewUrl?: string;
+  // Older rows used these names.
+  type?: string;
+  dataUrl?: string;
+  size?: number;
+};
+
+function mapAttachments(raw: unknown) {
+  if (!Array.isArray(raw)) return undefined;
+  return (raw as StoredAttachment[]).map((a, i) => ({
+    id: a.id ?? `att-${i}`,
+    name: a.name ?? "attachment",
+    mimeType: a.mimeType ?? a.type ?? "application/octet-stream",
+    size: a.size ?? 0,
+    previewUrl: a.previewUrl ?? a.dataUrl ?? "",
+  }));
+}
+
+function mapEvidenceType(value: string): EvidenceType {
+  const parsed = EvidenceTypeSchema.safeParse(value);
+  return parsed.success ? parsed.data : LEGACY_EVIDENCE_TYPE[value] ?? "other";
 }
 
 function mapEvidenceRow(row: EvidenceRow) {
@@ -364,7 +400,7 @@ function mapEvidenceRow(row: EvidenceRow) {
   return {
     id: row.id,
     subjectId: row.subject_id ?? "unknown-subject",
-    evidenceType: row.evidence_type,
+    evidenceType: mapEvidenceType(row.evidence_type),
     eventTime,
     earliestPossibleTime: row.earliest_possible_time
       ? new Date(row.earliest_possible_time).toISOString()
@@ -381,7 +417,8 @@ function mapEvidenceRow(row: EvidenceRow) {
     event: row.event ?? "No description provided.",
     source: row.source ?? "Unknown source",
     notes: row.notes ?? undefined,
-    attachments: Array.isArray(row.attachments) ? row.attachments : undefined,
+    attachments: mapAttachments(row.attachments),
+    involvedParties: Array.isArray(row.involved_parties) ? row.involved_parties : [],
     createdAt: new Date(row.created_at).toISOString(),
   };
 }
@@ -817,9 +854,9 @@ app.post("/api/cases/:caseId/evidence", async (req, res) => {
           input.event,
           input.source,
           input.attachments?.[0]?.name ?? null,
-          input.attachments?.[0]?.type ?? null,
+          input.attachments?.[0]?.mimeType ?? null,
           input.attachments?.[0]?.size ?? null,
-          input.attachments?.[0]?.dataUrl ?? null,
+          input.attachments?.[0]?.previewUrl ?? null,
           evidenceMetadata(input),
           FALLBACK_USER.id,
           FALLBACK_USER.name,
@@ -905,9 +942,9 @@ app.put("/api/cases/:caseId/evidence/:evidenceId", async (req, res) => {
           input.event,
           input.source,
           input.attachments?.[0]?.name ?? null,
-          input.attachments?.[0]?.type ?? null,
+          input.attachments?.[0]?.mimeType ?? null,
           input.attachments?.[0]?.size ?? null,
-          input.attachments?.[0]?.dataUrl ?? null,
+          input.attachments?.[0]?.previewUrl ?? null,
           evidenceMetadata(input),
         ]
       );

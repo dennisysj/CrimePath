@@ -18,14 +18,12 @@ export interface CaseSummary {
 }
 
 export type EvidenceType =
-  | "witness"
+  | "witness" // UPDATED line 13-22: enum replaced (was witness/cctv/gps/phone/transaction/transit/police/digital/other)
   | "cctv"
-  | "gps"
-  | "phone"
+  | "image"
+  | "video"
+  | "document"
   | "transaction"
-  | "transit"
-  | "police"
-  | "digital"
   | "other";
 
 export type TimeCertainty = "exact" | "approximate" | "range";
@@ -38,18 +36,35 @@ export interface EvidenceLocation {
 
 /**
  * A document or image attached to a piece of evidence (e.g. a photo of a
- * receipt, a scanned statement, a screenshot of a text thread). Held as a
- * data URL for this mock UI — swap for an uploaded-file reference once the
- * real backend has storage.
+ * receipt, a scanned statement, a screenshot of a text thread). previewUrl
+ * is an object URL (URL.createObjectURL) for this mock UI — swap for an
+ * uploaded-file reference once the real backend has storage.
  */
 export interface EvidenceAttachment {
   id: string;
   name: string;
   /** MIME type, e.g. "image/jpeg" or "application/pdf". */
-  type: string;
+  mimeType: string; // UPDATED line 40: was `type`
   size: number;
-  dataUrl: string;
+  previewUrl: string; // UPDATED line 42: was `dataUrl`
 }
+
+// ADDED lines 64-77: involved-party role model, for evidence that names more
+// than just its primary subject (e.g. a transaction with a second person
+// present, or a CCTV frame mentioning a vehicle).
+export type InvolvedRole = "with" | "vehicle_device" | "reported_by" | "mentioned";
+
+export interface InvolvedParty {
+  subjectId: string;
+  role: InvolvedRole;
+}
+
+export const ROLE_LABELS: Record<InvolvedRole, string> = {
+  with: "With",
+  vehicle_device: "Vehicle / device",
+  reported_by: "Reported by",
+  mentioned: "Mentioned",
+};
 
 export interface Evidence {
   id: string;
@@ -67,6 +82,7 @@ export interface Evidence {
   source: string;
   notes?: string;
   attachments?: EvidenceAttachment[];
+  involvedParties: InvolvedParty[]; // ADDED line 76: subjects beyond the primary one, each with a role
 }
 
 /**

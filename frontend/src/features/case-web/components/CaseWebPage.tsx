@@ -4,8 +4,7 @@ import { SAMPLE_CASE_ID, useCaseWebStore } from "../store";
 import type { Evidence, Subject } from "../types";
 import { formatClock } from "../timeUtils";
 import { AddEvidenceModal } from "./AddEvidenceModal";
-import { CaseWeb } from "./CaseWeb";
-import { DetailsPanel } from "./DetailsPanel";
+import { CardTimeline } from "./CardTimeline";
 import { EvidenceList } from "./EvidenceList";
 import { ManageSubjectsModal } from "./ManageSubjectsModal";
 
@@ -21,12 +20,10 @@ interface AllEvidencePageProps {
 const EVIDENCE_TYPE_LABEL: Record<Evidence["evidenceType"], string> = {
   witness: "Witness",
   cctv: "CCTV",
-  gps: "GPS",
-  phone: "Phone",
+  image: "Image",
+  video: "Video",
+  document: "Document",
   transaction: "Transaction",
-  transit: "Transit",
-  police: "Police",
-  digital: "Digital",
   other: "Other",
 };
 
@@ -274,7 +271,7 @@ export function CaseWebPage() {
         </aside>
 
         <main className="thin-scrollbar flex-1 overflow-auto p-6">
-          {subjects.length === 0 && (
+          {subjects.length === 0 ? (
             <div className="mx-auto mt-16 max-w-sm rounded-md border border-dashed border-neutral-800 p-6 text-center">
               <p className="text-sm text-neutral-300">This case has no subjects yet.</p>
               <p className="mt-1 text-xs text-neutral-500">
@@ -288,40 +285,31 @@ export function CaseWebPage() {
                 Add subjects
               </button>
             </div>
+          ) : (
+            <CardTimeline
+              subjects={subjects}
+              evidence={evidence}
+              analysis={analysis}
+              selection={selection}
+              newEvidenceIds={newEvidenceIds}
+              onSelectEvidence={selectEvidence}
+              onClearSelection={clearSelection}
+              onEditEvidence={(item) => setEvidenceModal({ editing: item })}
+              onRemoveEvidence={removeEvidenceQuietly}
+              onConfirmSuggestion={(id) => updateSuggestionStatus(id, "confirmed")}
+              onDismissSuggestion={(id) => updateSuggestionStatus(id, "dismissed")}
+            />
           )}
-          <CaseWeb
-            subjects={subjects}
-            evidence={evidence}
-            analysis={analysis}
-            selection={selection}
-            newEvidenceIds={newEvidenceIds}
-            onSelectSubject={selectSubject}
-            onSelectEvidence={selectEvidence}
-            onClearSelection={clearSelection}
-          />
         </main>
-
-        <aside className="w-96 flex-shrink-0 border-l border-neutral-800">
-          <DetailsPanel
-            subjects={subjects}
-            evidence={evidence}
-            analysis={analysis}
-            selection={selection}
-            onSelectEvidence={selectEvidence}
-            onEditEvidence={(item) => setEvidenceModal({ editing: item })}
-            onRemoveEvidence={removeEvidenceQuietly}
-            onConfirmSuggestion={(id) => updateSuggestionStatus(id, "confirmed")}
-            onDismissSuggestion={(id) => updateSuggestionStatus(id, "dismissed")}
-          />
-        </aside>
       </div>
 
       {evidenceModal && (
         <AddEvidenceModal
           subjects={subjects}
+          evidence={evidence}
           initial={evidenceModal.editing}
           onClose={() => setEvidenceModal(null)}
-          onCreateSubject={addSubject}
+          onAddSubject={addSubject}
           onSubmit={(input) =>
             evidenceModal.editing ? updateEvidence(evidenceModal.editing.id, input) : addEvidence(input)
           }
