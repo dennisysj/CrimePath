@@ -11,6 +11,7 @@ import { EventPathModal } from "./EventPathModal";
 import { EvidenceList } from "./EvidenceList";
 import { ManageSubjectsModal } from "./ManageSubjectsModal";
 import { EditCaseModal } from "./EditCaseModal";
+import inquisitorImage from "../../../../../src/images/inquisitor.png";
 
 interface AllEvidencePageProps {
   open: boolean;
@@ -302,20 +303,27 @@ export function CaseWebPage() {
 
   if (!started) {
     return (
-      <div className="flex h-screen items-center justify-center bg-neutral-950 px-6 text-neutral-100">
-        <div className="w-full max-w-sm">
-          <h1 className="mb-6 text-center text-4xl font-semibold">CrimePath</h1>
+      <div className="grid min-h-screen w-full place-items-center bg-[var(--bg)] px-6 py-12 text-[var(--text)]">
+        <main className="mx-auto w-full max-w-[440px]">
+          <div className="cover-mascot" aria-hidden="true">
+            <img className="cover-mascot-image" src={inquisitorImage} alt="" />
+          </div>
+          <h1 className="mb-6 text-center text-4xl font-semibold tracking-tight sm:text-5xl">CrimePath</h1>
+          <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5" aria-label="Case selection">
           {error && (
             <div className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
               {error}
             </div>
           )}
+          <label htmlFor="cover-case-select" className="mb-2 block text-xs font-medium text-[var(--text-muted)]">Select case</label>
           <select
+            id="cover-case-select"
             value={selectedCaseId}
             onChange={(event) => selectCase(event.target.value)}
             disabled={cases.length === 0}
-            className="w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none disabled:cursor-not-allowed disabled:text-neutral-600"
+            className="cover-case-select w-full rounded-lg border border-[var(--border-strong)] bg-[var(--bg)] py-3 pl-3 pr-11 text-sm text-[var(--text)] focus:border-[var(--focus-ring)] focus:outline-none focus:ring-2 focus:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:text-[var(--text-muted)]"
           >
+            {cases.length === 0 && <option value="">No cases yet</option>}
             {cases.map((caseItem) => (
               <option key={caseItem.id} value={caseItem.id}>
                 {caseItem.caseNumber ? `${caseItem.caseNumber} - ${caseItem.name}` : caseItem.name}
@@ -326,23 +334,19 @@ export function CaseWebPage() {
             type="button"
             onClick={() => setStarted(true)}
             disabled={!selectedCaseId}
-            className="mt-3 w-full rounded bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500"
+            className="mt-3 w-full rounded-lg bg-[var(--primary)] px-3 py-3 text-sm font-medium text-[var(--primary-text)] hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:bg-[var(--border)] disabled:text-[var(--text-muted)]"
           >
             Open case
           </button>
-          <div className="my-4 flex items-center gap-3 text-xs text-neutral-600">
-            <span className="h-px flex-1 bg-neutral-800" />
-            or
-            <span className="h-px flex-1 bg-neutral-800" />
-          </div>
           <button
             type="button"
             onClick={() => setNewCaseOpen(true)}
-            className="w-full rounded border border-neutral-700 px-3 py-2 text-sm font-medium text-neutral-200 hover:border-neutral-500 hover:text-white"
+            className="mt-3 w-full rounded-lg border border-[var(--border-strong)] px-3 py-3 text-sm font-medium text-[var(--text)] hover:border-[var(--text-muted)] hover:bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
           >
-            + New case
+            New case
           </button>
-        </div>
+          </section>
+        </main>
         {newCaseModal}
       </div>
     );

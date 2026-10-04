@@ -2,6 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
+.cover-mascot {
+  position: relative;
+  width: clamp(160px, 25vw, 200px);
+  aspect-ratio: 1;
+  margin: 0 auto 28px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.cover-mascot-image {
+  position: absolute;
+  bottom: 0;
+  left: 1%;
+  width: 98%;
+  height: 98%;
+  object-fit: contain;
+  transform-origin: center bottom;
+  animation: inquisitor-pop-up 850ms cubic-bezier(0.22, 1, 0.36, 1) both,
+    inquisitor-bob 3.2s ease-in-out 850ms infinite;
+}
+
+@keyframes inquisitor-pop-up {
+  0% { transform: translateY(105%) scale(0.8); opacity: 0; }
+  65% { transform: translateY(-8%) scale(1.04); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes inquisitor-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(4%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cover-mascot-image { animation: none; }
+}
+
+.cover-case-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23f2f1ec' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+}
+
 /* UPDATED lines 5-25: "Muted forensic" light theme replaced with a high-contrast dark theme — still the
    single source of truth for color across the timeline page, sidebar, bottom detail panel, path pop-out,
    wizard, and toasts. Components reference these via Tailwind arbitrary values, e.g. bg-[var(--surface)],
