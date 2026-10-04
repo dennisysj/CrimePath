@@ -127,6 +127,10 @@ export function AddEvidenceModal({ open, subjects, onClose, onSubmit }: AddEvide
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!subjectId || !locationName.trim() || !source.trim() || !eventDesc.trim()) return;
+    // No silent 0,0 fallback: that's a real coordinate (off the coast of
+    // West Africa) and produces wildly wrong, misleading travel-conflict
+    // distances rather than an obviously-missing value.
+    if (lat.trim() === "" || lng.trim() === "" || Number.isNaN(Number(lat)) || Number.isNaN(Number(lng))) return;
 
     let times;
     if (certainty === "exact") {
@@ -143,7 +147,7 @@ export function AddEvidenceModal({ open, subjects, onClose, onSubmit }: AddEvide
     onSubmit({
       subjectId,
       evidenceType,
-      location: { name: locationName.trim(), lat: Number(lat) || 0, lng: Number(lng) || 0 },
+      location: { name: locationName.trim(), lat: Number(lat), lng: Number(lng) },
       event: eventDesc.trim(),
       source: source.trim(),
       notes: notes.trim() || undefined,
@@ -371,7 +375,12 @@ export function AddEvidenceModal({ open, subjects, onClose, onSubmit }: AddEvide
           <button type="button" onClick={handleClose} className="rounded px-3 py-1.5 text-sm text-neutral-400 hover:text-neutral-200">
             Cancel
           </button>
-          <button type="submit" className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500">
+          <button
+            type="submit"
+            disabled={lat.trim() === "" || lng.trim() === "" || Number.isNaN(Number(lat)) || Number.isNaN(Number(lng))}
+            title={lat.trim() === "" || lng.trim() === "" ? "Lat/Lng are required - the AI draft doesn't fill these in" : undefined}
+            className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
             Add Evidence
           </button>
         </div>

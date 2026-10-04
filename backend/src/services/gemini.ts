@@ -1,25 +1,6 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
 import type { ExtractEvidenceResponse, EvidenceType, TimeCertainty } from "@crimepath/shared";
-
-// Lazily constructed so a missing key only breaks the /extract route, not
-// every route in the server (e.g. /api/health should stay up regardless).
-let ai: GoogleGenAI | undefined;
-
-function getClient(): GoogleGenAI {
-  if (ai) return ai;
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "GEMINI_API_KEY is not set. Copy .env.example to .env and add your key from https://aistudio.google.com/apikey"
-    );
-  }
-  ai = new GoogleGenAI({ apiKey });
-  return ai;
-}
-
-// flash-lite has its own free-tier quota, separate from (and less likely to be
-// exhausted than) the full flash model's - plenty for structured extraction.
-const MODEL = "gemini-flash-lite-latest";
+import { generateJson } from "./geminiClient.js";
 
 const EVIDENCE_TYPES = [
   "witness",
@@ -103,14 +84,6 @@ Timing rules - always produce a real, usable window, never leave it vague:
 evidenceType category - e.g. evidenceType "cctv" pairs with source like "CCTV camera, north
 entrance log". Keep "notes" null unless there's a genuine ambiguity worth flagging.`;
 
-const RETRYABLE_STATUS = new Set([429, 503]);
-const MAX_ATTEMPTS = 4;
-
-function retryableStatus(err: unknown): number | undefined {
-  const status = (err as { status?: number } | undefined)?.status;
-  return status !== undefined && RETRYABLE_STATUS.has(status) ? status : undefined;
-}
-
 interface RawExtraction {
   subjectName: string;
   evidenceType: EvidenceType;
@@ -129,50 +102,26 @@ export async function extractEvidenceFromText(
   referenceDate: string = new Date().toISOString().slice(0, 10)
 ): Promise<ExtractEvidenceResponse> {
   const prompt = `Reference date: ${referenceDate}\nRaw evidence text:\n"""${text}"""`;
-  const client = getClient();
 
-  let lastErr: unknown;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      const response = await client.models.generateContent({
-        model: MODEL,
-        contents: prompt,
-        config: {
-          systemInstruction: SYSTEM_INSTRUCTION,
-          responseMimeType: "application/json",
-          responseSchema: extractionSchema,
-        },
-      });
+  const raw = await generateJson({
+    contents: prompt,
+    systemInstruction: SYSTEM_INSTRUCTION,
+    responseSchema: extractionSchema,
+  });
+  const parsed = JSON.parse(raw) as RawExtraction;
 
-      const raw = response.text;
-      if (!raw) throw new Error("Gemini returned no text in the response.");
-
-      const parsed = JSON.parse(raw) as RawExtraction;
-
-      return {
-        evidence: {
-          evidenceType: parsed.evidenceType,
-          event: parsed.event,
-          source: parsed.source,
-          notes: parsed.notes ?? undefined,
-          timeCertainty: parsed.timeCertainty,
-          eventTime: parsed.eventTime,
-          earliestPossibleTime: parsed.earliestPossibleTime,
-          latestPossibleTime: parsed.latestPossibleTime,
-        },
-        extractedSubjectName: parsed.subjectName,
-        extractedLocationName: parsed.locationName,
-      };
-    } catch (err) {
-      lastErr = err;
-      const status = retryableStatus(err);
-      if (!status || attempt === MAX_ATTEMPTS) throw err;
-      const delayMs = 1000 * 2 ** (attempt - 1);
-      console.warn(
-        `Gemini request failed with ${status} (attempt ${attempt}/${MAX_ATTEMPTS}), retrying in ${delayMs}ms...`
-      );
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
-  throw lastErr;
+  return {
+    evidence: {
+      evidenceType: parsed.evidenceType,
+      event: parsed.event,
+      source: parsed.source,
+      notes: parsed.notes ?? undefined,
+      timeCertainty: parsed.timeCertainty,
+      eventTime: parsed.eventTime,
+      earliestPossibleTime: parsed.earliestPossibleTime,
+      latestPossibleTime: parsed.latestPossibleTime,
+    },
+    extractedSubjectName: parsed.subjectName,
+    extractedLocationName: parsed.locationName,
+  };
 }

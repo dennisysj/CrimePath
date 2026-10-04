@@ -4,6 +4,7 @@ import express from "express";
 import type { HealthResponse } from "@crimepath/shared";
 import { ExtractEvidenceRequestSchema } from "@crimepath/shared";
 import { extractEvidenceFromText } from "./services/gemini.js";
+import * as store from "./store.js";
 
 const app = express();
 app.use(cors());
@@ -26,7 +27,7 @@ app.post("/api/extract", async (req, res) => {
   }
 
   try {
-    const result = await extractEvidenceFromText(parsed.data.text);
+    const result = await extractEvidenceFromText(parsed.data.text, store.getIncidentDate());
     res.json(result);
   } catch (err) {
     console.error("Gemini extraction failed:", err);
@@ -34,8 +35,85 @@ app.post("/api/extract", async (req, res) => {
   }
 });
 
-// TODO (Phase 2): cases/entities/evidence CRUD routes, db wiring.
-// TODO (Phase 3): conflict engine + travel services.
+// Hardcoded single-case demo data (backend/src/data/demoCase.ts), held in an
+// in-memory store (backend/src/store.ts) - stands in for the real DB-backed
+// multi-case API until that exists. Routes match what CaseWebApi needs.
+
+app.get("/api/case-name", (_req, res) => {
+  res.json({ caseName: store.getCaseName() });
+});
+
+app.get("/api/subjects", (_req, res) => {
+  res.json(store.getSubjects());
+});
+
+app.get("/api/evidence", (_req, res) => {
+  res.json(store.getEvidence());
+});
+
+app.post("/api/evidence", async (req, res) => {
+  const { subjectId, evidenceType, eventTime, earliestPossibleTime, latestPossibleTime, timeCertainty, location, event, source, notes } =
+    req.body ?? {};
+
+  if (!subjectId || !evidenceType || !eventTime || !location || !event || !source) {
+    res.status(400).json({ error: "Missing required evidence fields." });
+    return;
+  }
+
+  try {
+    // Recomputes conflicts/gaps (Gemini-judged) before responding, so
+    // GET /api/analysis is immediately consistent with what was just added.
+    const created = await store.addEvidence({
+      subjectId,
+      evidenceType,
+      eventTime,
+      earliestPossibleTime,
+      latestPossibleTime,
+      timeCertainty,
+      location,
+      event,
+      source,
+      notes,
+    });
+    res.status(201).json(created);
+  } catch (err) {
+    console.error("Failed to add evidence / recompute analysis:", err);
+    res.status(502).json({ error: "Could not recompute conflicts/gaps. Check server logs and GEMINI_API_KEY." });
+  }
+});
+
+app.delete("/api/evidence/:id", async (req, res) => {
+  try {
+    await store.removeEvidence(req.params.id);
+    res.status(204).end();
+  } catch (err) {
+    console.error("Failed to remove evidence / recompute analysis:", err);
+    res.status(502).json({ error: "Could not recompute conflicts/gaps. Check server logs and GEMINI_API_KEY." });
+  }
+});
+
+app.get("/api/analysis", async (_req, res) => {
+  try {
+    res.json(await store.getAnalysis());
+  } catch (err) {
+    console.error("Failed to compute analysis:", err);
+    res.status(502).json({ error: "Could not compute conflicts/gaps. Check server logs and GEMINI_API_KEY." });
+  }
+});
+
+app.patch("/api/suggestions/:id/status", (req, res) => {
+  const { status } = req.body ?? {};
+  if (status !== "pending" && status !== "confirmed" && status !== "dismissed") {
+    res.status(400).json({ error: "status must be 'pending', 'confirmed', or 'dismissed'." });
+    return;
+  }
+  store.updateSuggestionStatus(req.params.id, status);
+  res.status(204).end();
+});
+
+// TODO (Phase 2): multi-case + entities CRUD, db wiring (replaces the
+// hardcoded single-case store above with real persistence).
+// TODO: corroboration/AI-suggestion engine (still the static demo values).
 
 const port = Number(process.env.PORT) || 4000;
 app.listen(port, () => {
