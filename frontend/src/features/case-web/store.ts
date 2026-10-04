@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { caseWebApi, type CaseUpdate, type CrimeInput, type ProfilePictureInput, type SubjectInput } from "./api";
+import { getCaseSummary } from "./extractApi";
 import type { AiSuggestionStatus, CaseAnalysis, CaseSummary, Crime, Evidence, Reliability, Subject } from "./types";
 
 const EMPTY_ANALYSIS: CaseAnalysis = {
@@ -38,6 +39,16 @@ interface CaseWebState {
   subjectFilter: string[];
   /** Evidence ids added during this session, so the timeline can fade them in once. */
   newEvidenceIds: Set<string>;
+  /**
+   * Gemini-generated case insights. Shared across every place that renders
+   * them (main sidebar, Evidence dashboard) so only one fetch happens no
+   * matter how many are mounted at once; cleared on case switch.
+   */
+  aiSummary: string[] | null;
+  aiSummaryLoading: boolean;
+  aiSummaryError: string | null;
+  /** No-ops if a summary is already cached/errored for this case, unless force is true. */
+  loadAiSummary: (force?: boolean) => Promise<void>;
   load: () => Promise<void>;
   selectCase: (id: string) => Promise<void>;
   createCase: (input: { name: string; description?: string }) => Promise<void>;
@@ -136,7 +147,20 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
       caseWebApi.getCrimes(caseId),
     ]);
     rememberCase(caseId);
-    set({ cases, selectedCaseId: caseId, caseName, subjects, evidence, crimes, analysis, selection: null, subjectFilter: [], loading: false });
+    set({
+      cases,
+      selectedCaseId: caseId,
+      caseName,
+      subjects,
+      evidence,
+      crimes,
+      analysis,
+      selection: null,
+      subjectFilter: [],
+      loading: false,
+      aiSummary: null,
+      aiSummaryError: null,
+    });
   }
 
   return {
@@ -152,6 +176,25 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
     selection: null,
     subjectFilter: [],
     newEvidenceIds: new Set(),
+    aiSummary: null,
+    aiSummaryLoading: false,
+    aiSummaryError: null,
+
+    loadAiSummary: async (force = false) => {
+      const state = get();
+      if (state.aiSummaryLoading) return;
+      if (!force && (state.aiSummary !== null || state.aiSummaryError !== null)) return;
+      set({ aiSummaryLoading: true, aiSummaryError: null });
+      try {
+        const bullets = await getCaseSummary(state.selectedCaseId);
+        set({ aiSummary: bullets, aiSummaryLoading: false });
+      } catch (error) {
+        set({
+          aiSummaryError: error instanceof Error ? error.message : "Could not generate a summary.",
+          aiSummaryLoading: false,
+        });
+      }
+    },
 
     load: async () => {
       set({ loading: true, error: null });

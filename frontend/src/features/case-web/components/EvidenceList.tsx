@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { PanelLeftClose, PanelLeftOpen, Paperclip, Plus, Trash2 } from "lucide-react";
+import { MapPin, PanelLeftClose, PanelLeftOpen, Paperclip, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { Evidence, Subject } from "../types";
 import type { Selection } from "../store";
 import { formatDateTime } from "../timeUtils";
 import { readPersisted, writePersisted } from "./persistence";
 import { subjectColorFor } from "./subjectColors";
+import { AiSummarySection } from "./AiSummarySection";
 
 interface EvidenceListProps {
   subjects: Subject[];
@@ -93,6 +94,10 @@ export function EvidenceList({
         </div>
       ) : (
         <div className="flex h-full min-w-[320px] flex-col">
+          <div className="border-b p-2" style={{ borderColor: "var(--border)" }}>
+            <AiSummarySection />
+          </div>
+
           <div className="flex items-center justify-between border-b p-3" style={{ borderColor: "var(--border)" }}>
             <span className="text-xs font-semibold" style={{ color: "var(--text)" }}>
               Evidence ({countLabel})
@@ -197,8 +202,12 @@ export function EvidenceList({
                   <p className="mt-1 line-clamp-2 text-xs" style={{ color: "var(--text-muted)" }}>
                     {e.event}
                   </p>
-                  <p className="mt-0.5 font-mono text-[10px]" style={{ color: "var(--text-muted)" }}>
-                    {e.location.name}
+                  <p
+                    className="mt-0.5 flex items-center gap-1 font-mono text-[10px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    <MapPin size={9} className="flex-shrink-0" />
+                    <span className="truncate">{e.location.name}</span>
                   </p>
 
                   <button

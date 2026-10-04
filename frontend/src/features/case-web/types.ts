@@ -99,6 +99,13 @@ export interface Evidence {
   involvedParties: InvolvedParty[]; // ADDED line 76: subjects beyond the primary one, each with a role
   /** Investigator-set standing of the event (case_events.reliability). Never an AI score. */
   reliability?: Reliability;
+  /**
+   * Real ISO timestamp (genuine UTC, unlike eventTime/earliest/latestPossibleTime
+   * above - those are investigator-entered wall-clock digits with no real
+   * timezone meaning) for when this record was added to the case. Absent
+   * for evidence sources that don't supply it (e.g. mock data).
+   */
+  createdAt?: string;
 }
 
 /**

@@ -4,12 +4,12 @@ import type { CaseAnalysis, Evidence, EvidenceType, Subject } from "../types";
 import { matchesSubjectFilter } from "../store";
 import { formatDateTime } from "../timeUtils";
 import { EVIDENCE_TYPE_LABEL, hasLocation } from "../locationUtils";
+import { countConflictsBySubject } from "../conflictStats";
 import { STATUS_COLORS } from "./statusColors";
 import { EvidenceInsightsPanel } from "./EvidenceInsightsPanel";
 
 interface EvidenceDashboardProps {
   open: boolean;
-  caseId: string;
   caseName: string;
   subjects: Subject[];
   evidence: Evidence[];
@@ -62,7 +62,6 @@ function StatTile({ icon, label, value, sublabel, tone = "default" }: StatTilePr
 
 export function EvidenceDashboard({
   open,
-  caseId,
   caseName,
   subjects,
   evidence,
@@ -118,9 +117,6 @@ export function EvidenceDashboard({
   }, [evidence, query, typeFilter, dateStart, dateEnd, subjectFilter, subjectById]);
 
   const stats = useMemo(() => {
-    const filteredIds = new Set(filtered.map((e) => e.id));
-    const evidenceById = new Map(evidence.map((e) => [e.id, e]));
-
     const peopleMentioned = new Set<string>();
     for (const e of filtered) {
       peopleMentioned.add(e.subjectId);
@@ -129,17 +125,9 @@ export function EvidenceDashboard({
 
     const unverifiedWitness = filtered.filter((e) => e.evidenceType === "witness" && isUnverified(e)).length;
 
-    // Only genuine (not resolved-by-uncertainty) conflicts where both sides
-    // of the conflict are in the currently filtered set.
-    const conflictCountBySubject = new Map<string, number>();
-    for (const c of analysis.conflicts) {
-      if (c.resolvedByUncertainty) continue;
-      const [aId, bId] = c.evidenceIds;
-      if (!filteredIds.has(aId) || !filteredIds.has(bId)) continue;
-      const subjectId = evidenceById.get(aId)?.subjectId;
-      if (!subjectId) continue;
-      conflictCountBySubject.set(subjectId, (conflictCountBySubject.get(subjectId) ?? 0) + 1);
-    }
+    // Scoped to `filtered` (not `evidence`), so a conflict only counts here
+    // when both sides are in the currently filtered set.
+    const conflictCountBySubject = countConflictsBySubject(analysis.conflicts, filtered);
     let mostConflicting: { subject: Subject; count: number } | null = null;
     for (const [subjectId, count] of conflictCountBySubject) {
       const subject = subjectById.get(subjectId);
@@ -150,8 +138,11 @@ export function EvidenceDashboard({
 
     const withLocation = filtered.filter(hasLocation).length;
 
-    return { peopleMentioned: peopleMentioned.size, unverifiedWitness, mostConflicting, withLocation };
-  }, [filtered, evidence, analysis.conflicts, subjectById]);
+    const today = new Date().toDateString();
+    const addedToday = filtered.filter((e) => e.createdAt && new Date(e.createdAt).toDateString() === today).length;
+
+    return { peopleMentioned: peopleMentioned.size, unverifiedWitness, mostConflicting, withLocation, addedToday };
+  }, [filtered, analysis.conflicts, subjectById]);
 
   if (!open) return null;
 
@@ -192,7 +183,12 @@ export function EvidenceDashboard({
       </header>
 
       <div className="grid grid-cols-2 gap-3 border-b border-neutral-800 px-6 py-4 sm:grid-cols-3 lg:grid-cols-5">
-        <StatTile icon={<FileText size={17} />} label="Total Evidence" value={filtered.length} />
+        <StatTile
+          icon={<FileText size={17} />}
+          label="Total Evidence"
+          value={filtered.length}
+          sublabel={stats.addedToday > 0 ? `+${stats.addedToday} today` : undefined}
+        />
         <StatTile icon={<Users size={17} />} label="People Mentioned" value={stats.peopleMentioned} />
         <StatTile
           icon={<AlertTriangle size={17} />}
@@ -341,7 +337,10 @@ export function EvidenceDashboard({
                   </div>
                   <p className="mt-3 text-sm font-medium text-neutral-100">{item.event}</p>
                   <div className="mt-2 grid gap-1 text-xs text-neutral-500 sm:grid-cols-2">
-                    <span>{item.location.name}</span>
+                    <span className="flex items-center gap-1">
+                      <MapPin size={11} className="flex-shrink-0" />
+                      <span className="truncate">{item.location.name}</span>
+                    </span>
                     <span>{item.source}</span>
                   </div>
                   {item.notes && <p className="mt-2 text-xs text-neutral-400">{item.notes}</p>}
@@ -357,7 +356,6 @@ export function EvidenceDashboard({
         </main>
 
         <EvidenceInsightsPanel
-          caseId={caseId}
           evidence={filtered}
           subjects={subjects}
           analysis={analysis}

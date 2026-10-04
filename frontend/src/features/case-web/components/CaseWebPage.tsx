@@ -485,7 +485,6 @@ export function CaseWebPage() {
 
       <EvidenceDashboard
         open={allEvidenceOpen}
-        caseId={selectedCaseId}
         caseName={caseName}
         subjects={subjects}
         evidence={evidence}
