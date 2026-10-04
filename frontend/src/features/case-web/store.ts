@@ -22,6 +22,7 @@ interface CaseWebState {
   newEvidenceIds: Set<string>;
   load: () => Promise<void>;
   addEvidence: (input: Omit<Evidence, "id">) => Promise<void>;
+  addSubject: (input: Omit<Subject, "id">) => Promise<Subject>; // ADDED line 25: new-subject support for the Add Evidence wizard
   removeEvidence: (id: string) => Promise<void>;
   updateSuggestionStatus: (id: string, status: AiSuggestionStatus) => Promise<void>;
   selectEvidence: (id: string) => void;
@@ -64,6 +65,13 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => ({
         return { newEvidenceIds: next };
       });
     }, NEW_EVIDENCE_HIGHLIGHT_MS);
+  },
+
+  // ADDED lines 69-73: addSubject, mirrors addEvidence's pattern (no "new" highlight needed — it just appears in the dropdown)
+  addSubject: async (input) => {
+    const created = await caseWebApi.addSubject(input);
+    set((state) => ({ subjects: [...state.subjects, created] }));
+    return created;
   },
 
   removeEvidence: async (id) => {

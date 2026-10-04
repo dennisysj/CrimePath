@@ -12,6 +12,7 @@ import {
 export interface CaseWebApi {
   getCaseName(): Promise<string>;
   getSubjects(): Promise<Subject[]>;
+  addSubject(input: Omit<Subject, "id">): Promise<Subject>; // ADDED line 15: new-subject support for the Add Evidence wizard (step 2)
   getEvidence(): Promise<Evidence[]>;
   addEvidence(input: Omit<Evidence, "id">): Promise<Evidence>;
   removeEvidence(id: string): Promise<void>;
@@ -26,6 +27,7 @@ function delay<T>(value: T): Promise<T> {
 }
 
 let nextEvidenceSeq = 1;
+let nextSubjectSeq = 1; // ADDED: id counter for subjects created via the wizard's "+ New subject" form
 
 /**
  * In-memory mock backend. Seeded from mockData.ts and mutated in place so
@@ -54,6 +56,13 @@ class MockCaseWebApi implements CaseWebApi {
 
   getSubjects(): Promise<Subject[]> {
     return delay([...this.subjects]);
+  }
+
+  // ADDED lines 59-63: addSubject, mirrors addEvidence's pattern
+  addSubject(input: Omit<Subject, "id">): Promise<Subject> {
+    const created: Subject = { ...input, id: `subject-new-${nextSubjectSeq++}` };
+    this.subjects.push(created);
+    return delay(created);
   }
 
   getEvidence(): Promise<Evidence[]> {

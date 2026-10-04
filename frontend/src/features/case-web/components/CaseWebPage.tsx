@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useCaseWebStore } from "../store";
 import { AddEvidenceModal } from "./AddEvidenceModal";
-import { CaseWeb } from "./CaseWeb";
-import { DetailsPanel } from "./DetailsPanel";
+import { CardTimeline } from "./CardTimeline"; // UPDATED line 4: was `import { CaseWeb } from "./CaseWeb";` — timeline replaced with the card-based version
+// DELETED line 5: removed `import { DetailsPanel } from "./DetailsPanel";` — its job is now done by CardTimeline's own EvidenceDetailPanel, rendered below the canvas instead of beside it
 import { EvidenceList } from "./EvidenceList";
 
 export function CaseWebPage() {
@@ -16,6 +16,7 @@ export function CaseWebPage() {
     newEvidenceIds,
     load,
     addEvidence,
+    addSubject, // ADDED line 19: for the Add Evidence wizard's "+ New subject" form
     removeEvidence,
     selectSubject,
     selectEvidence,
@@ -66,37 +67,30 @@ export function CaseWebPage() {
           />
         </aside>
 
+        {/* UPDATED lines 70-93: was <main><CaseWeb/></main> + a separate <aside><DetailsPanel/></aside> column — */}
+        {/* the card timeline now renders its own detail panel below the canvas, so there's a single full-width main area. */}
         <main className="thin-scrollbar flex-1 overflow-auto p-6">
-          <CaseWeb
+          <CardTimeline
             subjects={subjects}
             evidence={evidence}
             analysis={analysis}
             selection={selection}
             newEvidenceIds={newEvidenceIds}
-            onSelectSubject={selectSubject}
             onSelectEvidence={selectEvidence}
             onClearSelection={clearSelection}
+            onConfirmSuggestion={(id: string) => updateSuggestionStatus(id, "confirmed")}
+            onDismissSuggestion={(id: string) => updateSuggestionStatus(id, "dismissed")}
           />
         </main>
-
-        <aside className="w-96 flex-shrink-0 border-l border-neutral-800">
-          <DetailsPanel
-            subjects={subjects}
-            evidence={evidence}
-            analysis={analysis}
-            selection={selection}
-            onSelectEvidence={selectEvidence}
-            onConfirmSuggestion={(id) => updateSuggestionStatus(id, "confirmed")}
-            onDismissSuggestion={(id) => updateSuggestionStatus(id, "dismissed")}
-          />
-        </aside>
       </div>
 
       <AddEvidenceModal
         open={modalOpen}
         subjects={subjects}
+        evidence={evidence} // ADDED line 99: location-combobox needs the full evidence list for per-location counts
         onClose={() => setModalOpen(false)}
         onSubmit={(input) => addEvidence(input)}
+        onAddSubject={addSubject} // ADDED line 101: wired to the new store action
       />
     </div>
   );

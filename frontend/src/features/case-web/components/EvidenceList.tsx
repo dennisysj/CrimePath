@@ -22,12 +22,10 @@ const SUBJECT_COLOR: Record<Subject["kind"], string> = {
 const EVIDENCE_TYPE_LABEL: Record<Evidence["evidenceType"], string> = {
   witness: "Witness",
   cctv: "CCTV",
-  gps: "GPS",
-  phone: "Phone",
+  image: "Image", // UPDATED line 22-31: map replaced (was witness/cctv/gps/phone/transaction/transit/police/digital/other)
+  video: "Video",
+  document: "Document",
   transaction: "Transaction",
-  transit: "Transit",
-  police: "Police",
-  digital: "Digital",
   other: "Other",
 };
 
