@@ -1283,6 +1283,14 @@ async function ensureSchema() {
 // Routes: health + photo metadata
 // ---------------------------------------------------------------------------
 
+app.get("/", (_req, res) => {
+  res.json({
+    name: "CrimePath API",
+    status: "ok",
+    health: "/api/health",
+  });
+});
+
 app.get("/api/health", (_req, res) => {
   const body: HealthResponse = { status: "ok" };
   res.json(body);
