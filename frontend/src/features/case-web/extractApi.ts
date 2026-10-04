@@ -1,12 +1,12 @@
 import type { ExtractEvidenceResponse } from "@crimepath/shared";
+import { API_BASE_URL, API_FALLBACK_URL } from "./apiConfig";
 
 // Not part of CaseWebApi (api.ts) because it's a stateless Gemini utility,
 // not case data - and unlike the rest of this feature, there's no mock
 // backend for it to fall back to, so it always hits the real server.
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api";
 
 export async function extractEvidenceDraft(text: string): Promise<ExtractEvidenceResponse> {
-  const res = await fetch(`${API_URL}/extract`, {
+  const res = await apiFetch("/extract", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
@@ -28,7 +28,7 @@ export interface ExtractCrimeResponse {
 }
 
 export async function extractCrimeDraft(text: string): Promise<ExtractCrimeResponse> {
-  const res = await fetch(`${API_URL}/extract-crime`, {
+  const res = await apiFetch("/extract-crime", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
@@ -42,11 +42,23 @@ export async function extractCrimeDraft(text: string): Promise<ExtractCrimeRespo
 
 /** Gemini-generated bullet insights over the case's current evidence/conflicts/gaps. Regenerated on request, not cached server-side. */
 export async function getCaseSummary(caseId: string): Promise<string[]> {
-  const res = await fetch(`${API_URL}/cases/${caseId}/summary`);
+  const res = await apiFetch(`/cases/${caseId}/summary`);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? `Summary failed (${res.status})`);
   }
   const data = (await res.json()) as { bullets: string[] };
   return data.bullets;
+}
+
+async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(`${API_BASE_URL}${path}`, init);
+  } catch {
+    try {
+      return await fetch(`${API_FALLBACK_URL}${path}`, init);
+    } catch {
+      throw new Error(`Can't reach the backend at ${API_BASE_URL} or fallback ${API_FALLBACK_URL}. Is the Render service awake?`);
+    }
+  }
 }
