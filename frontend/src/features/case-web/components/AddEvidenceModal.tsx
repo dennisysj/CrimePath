@@ -357,12 +357,12 @@ export function AddEvidenceModal({
 
   async function handleSubmit() {
     const subjectName = subjects.find((s) => s.id === draft.subjectId)?.name ?? "the subject";
-    const built = buildEvidenceInput(draft, subjectName);
+    const built = buildEvidenceInput(draft, subjectName, (id) => subjects.find((s) => s.id === id)?.name);
     if (!built) return;
     // Keep a hand-written description/source when editing; only the
     // wizard's auto-generated text is regenerated from the new fields.
     const input =
-      initial && !/ evidence involving .+ near .+\.$/.test(initial.event)
+      initial && !/ (evidence involving|said they saw) .+ near .+\.$/.test(initial.event)
         ? { ...built, event: initial.event, source: initial.source }
         : built;
 

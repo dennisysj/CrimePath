@@ -45,7 +45,30 @@ function deriveTimesFromDraft(draft: WizardDraft): DerivedTimes | null {
  * the old single-step modal) — `event` and `source` are derived from what
  * was already picked in steps 1-2. `notes` stays its own optional field.
  */
-export function buildEvidenceInput(draft: WizardDraft, subjectName: string): Omit<Evidence, "id"> | null {
+function describeEvent(
+  draft: WizardDraft,
+  sourceLabel: string,
+  subjectName: string,
+  locationName: string,
+  nameOf: (subjectId: string) => string | undefined,
+): string {
+  // Whoever is tagged "Reported by" in step 2 is the person giving the account.
+  const reporterNames = draft.involvedParties
+    .filter((p) => p.role === "reported_by" && p.subjectId)
+    .map((p) => nameOf(p.subjectId))
+    .filter((n): n is string => !!n);
+  const reporters = reporterNames.join(" and ");
+
+  if (!reporters) return `${sourceLabel} evidence involving ${subjectName} near ${locationName}.`;
+  if (draft.evidenceType === "witness") return `${reporters} said they saw ${subjectName} near ${locationName}.`;
+  return `${sourceLabel} evidence involving ${subjectName} near ${locationName}, reported by ${reporters}.`;
+}
+
+export function buildEvidenceInput(
+  draft: WizardDraft,
+  subjectName: string,
+  nameOf: (subjectId: string) => string | undefined,
+): Omit<Evidence, "id"> | null {
   if (!draft.evidenceType || !draft.certainty) return null;
   const locationName = draft.locationName.trim();
   if (!locationName) return null;
@@ -63,7 +86,7 @@ export function buildEvidenceInput(draft: WizardDraft, subjectName: string): Omi
       draft.locationLat != null && draft.locationLng != null
         ? { name: locationName, lat: draft.locationLat, lng: draft.locationLng }
         : { name: locationName },
-    event: `${sourceLabel} evidence involving ${subjectName} near ${locationName}.`,
+    event: describeEvent(draft, sourceLabel, subjectName, locationName, nameOf),
     source: sourceLabel,
     notes: draft.notes.trim() || undefined,
     attachments: draft.attachments.length > 0 ? draft.attachments : undefined,
