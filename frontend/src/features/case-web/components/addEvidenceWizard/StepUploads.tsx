@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { FileText, Film, Loader2, MapPin, Sparkles, UploadCloud, X } from "lucide-react";
-import type { Subject } from "../../types";
+import type { InvolvedRole, Subject } from "../../types";
 import type { UploadedImageMetadata } from "../../api";
 import { ROLE_LABELS } from "../../types";
 import { formatBytes } from "../../attachmentUtils";
@@ -30,11 +30,13 @@ interface StepUploadsProps {
 
 /**
  * Mock "Gemini" extraction: a plain heuristic over the typed description —
- * no API call. Looks for a time ("9:45am"), a subject name, and a known
- * location name already mentioned in the text. Never overwrites fields it
- * can't find a match for, so a manual edit never gets clobbered.
+ * no API call. Looks for a time ("9:45am"), a subject name, a known
+ * location name, and any OTHER known subject named in the text (e.g. a
+ * witness/reporter) — those get added to "Also involved" so they don't
+ * silently disappear from the record. Never overwrites fields it can't
+ * find a match for, so a manual edit never gets clobbered.
  */
-function mockAutoFillFromText(text: string, subjects: Subject[]): Partial<WizardDraft> | null {
+function mockAutoFillFromText(text: string, subjects: Subject[], draft: WizardDraft): Partial<WizardDraft> | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
   const lower = trimmed.toLowerCase();
@@ -52,6 +54,16 @@ function mockAutoFillFromText(text: string, subjects: Subject[]): Partial<Wizard
 
   const matchedSubject = subjects.find((s) => lower.includes(s.name.toLowerCase()));
   if (matchedSubject) patch.subjectId = matchedSubject.id;
+
+  const primarySubjectId = matchedSubject?.id ?? draft.subjectId;
+  const alreadyInvolved = new Set(draft.involvedParties.map((p) => p.subjectId));
+  const newlyMentioned = subjects.filter(
+    (s) => s.id !== primarySubjectId && !alreadyInvolved.has(s.id) && lower.includes(s.name.toLowerCase()),
+  );
+  if (newlyMentioned.length > 0) {
+    const role: InvolvedRole = draft.evidenceType === "witness" ? "reported_by" : "mentioned";
+    patch.involvedParties = [...draft.involvedParties, ...newlyMentioned.map((s) => ({ subjectId: s.id, role }))];
+  }
 
   const matchedLocation = KNOWN_LOCATIONS.find((l) => lower.includes(l.name.toLowerCase()));
   if (matchedLocation) {
@@ -102,7 +114,7 @@ export function StepUploads({
       setAutoFillMessage("Auto-fill from uploaded files isn't available in this preview — try adding a short description instead.");
       return;
     }
-    const patch = mockAutoFillFromText(draft.notes, subjects);
+    const patch = mockAutoFillFromText(draft.notes, subjects, draft);
     if (!patch) {
       setAutoFillMessage("Couldn't find enough detail to auto-fill — happy to let you fill it in manually.");
       return;

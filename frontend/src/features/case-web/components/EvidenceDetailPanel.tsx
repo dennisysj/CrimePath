@@ -155,6 +155,7 @@ export function EvidenceDetailPanel({
       </dl>
 
       <p className="mb-3 text-sm text-neutral-300">"{evidence.event}"</p>
+      {evidence.notes && <p className="mb-3 text-xs text-neutral-400">{evidence.notes}</p>}
 
       <div className="mb-3">
         <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">Involved</h3>
