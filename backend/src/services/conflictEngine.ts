@@ -1,6 +1,6 @@
 import { Type } from "@google/genai";
 import { generateJson } from "./geminiClient.js";
-import { distanceKm } from "./geo.js";
+import { distanceKm, hasCoordinates } from "./geo.js";
 import type { Conflict, Evidence, Gap } from "../data/demoCase.js";
 
 const GAP_THRESHOLD_MINUTES = 45;
@@ -98,6 +98,9 @@ interface FeasibilityResult {
 }
 
 async function judgeFeasibility(a: Evidence, b: Evidence): Promise<FeasibilityResult> {
+  if (!hasCoordinates(a.location) || !hasCoordinates(b.location)) {
+    throw new Error("Both evidence items need coordinates for a feasibility check.");
+  }
   const km = distanceKm(a.location, b.location);
   const reportedGapMin = minutesBetween(a.eventTime, b.eventTime);
   const bestCaseGapMin = minutesBetween(a.earliestPossibleTime, b.latestPossibleTime);
@@ -130,6 +133,8 @@ Gap under the most generous reading of both uncertainty windows: ${bestCaseGapMi
 export async function computeConflicts(evidence: Evidence[]): Promise<Conflict[]> {
   const bySubject = new Map<string, Evidence[]>();
   for (const e of evidence) {
+    // Travel feasibility needs a real distance, so text-only locations can't be paired.
+    if (!hasCoordinates(e.location)) continue;
     const list = bySubject.get(e.subjectId) ?? [];
     list.push(e);
     bySubject.set(e.subjectId, list);

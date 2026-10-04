@@ -1,4 +1,7 @@
-import "dotenv/config";
+import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
+// npm workspaces run this with cwd = backend/, but the .env lives at the repo root.
+dotenv.config({ path: fileURLToPath(new URL("../../.env", import.meta.url)) });
 import cors from "cors";
 import express from "express";
 import type { HealthResponse } from "@crimepath/shared";

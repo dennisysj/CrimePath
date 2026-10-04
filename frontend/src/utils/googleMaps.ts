@@ -1,11 +1,13 @@
+type Coordinate = number | null | undefined;
+
 type TimedLocation = {
-  id?: number;
+  id?: number | string;
   capturedAt: string;
-  latitude: number | null;
-  longitude: number | null;
+  latitude: Coordinate;
+  longitude: Coordinate;
 };
 
-export function isValidCoordinate(latitude: number | null, longitude: number | null): boolean {
+export function isValidCoordinate(latitude: Coordinate, longitude: Coordinate): boolean {
   return (
     typeof latitude === "number" &&
     typeof longitude === "number" &&
@@ -18,20 +20,25 @@ export function isValidCoordinate(latitude: number | null, longitude: number | n
   );
 }
 
-export function isValidLocation<T extends { latitude: number | null; longitude: number | null }>(
+export function isValidLocation<T extends { latitude: Coordinate; longitude: Coordinate }>(
   event: T,
 ): event is T & { latitude: number; longitude: number } {
   return isValidCoordinate(event.latitude, event.longitude);
 }
 
-export function sortEventsByTime<T extends { id?: number; capturedAt: string }>(events: T[]): T[] {
+function compareIds(a: number | string | undefined, b: number | string | undefined): number {
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return String(a ?? "").localeCompare(String(b ?? ""));
+}
+
+export function sortEventsByTime<T extends { id?: number | string; capturedAt: string }>(events: T[]): T[] {
   return [...events].sort((a, b) => {
     const aTime = Date.parse(a.capturedAt);
     const bTime = Date.parse(b.capturedAt);
-    if (Number.isNaN(aTime) && Number.isNaN(bTime)) return (a.id ?? 0) - (b.id ?? 0);
+    if (Number.isNaN(aTime) && Number.isNaN(bTime)) return compareIds(a.id, b.id);
     if (Number.isNaN(aTime)) return 1;
     if (Number.isNaN(bTime)) return -1;
-    if (aTime === bTime) return (a.id ?? 0) - (b.id ?? 0);
+    if (aTime === bTime) return compareIds(a.id, b.id);
     return aTime - bTime;
   });
 }
@@ -47,8 +54,8 @@ function coordinatePair(latitude: number, longitude: number): string {
 }
 
 export function buildGoogleMapsLocationUrl(event: {
-  latitude: number | null;
-  longitude: number | null;
+  latitude: Coordinate;
+  longitude: Coordinate;
 }): string | null {
   if (!isValidLocation(event)) return null;
   const params = new URLSearchParams({

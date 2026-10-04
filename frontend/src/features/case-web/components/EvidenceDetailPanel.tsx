@@ -3,6 +3,8 @@ import type { AiSuggestion, CaseAnalysis, Evidence, EvidenceType, Subject } from
 import { ROLE_LABELS } from "../types";
 import { formatClock, formatClockWithSeconds } from "../timeUtils";
 import { formatBytes } from "../attachmentUtils";
+import { formatLocationLabel } from "../locationUtils";
+import { EvidenceLocationMap } from "./EvidenceLocationMap";
 
 interface EvidenceDetailPanelProps {
   evidence: Evidence | undefined;
@@ -49,7 +51,7 @@ export function EvidenceDetailPanel({
   const hasConnections =
     relatedConflicts.length > 0 || relatedGaps.length > 0 || relatedCorroborations.length > 0 || relatedSuggestions.length > 0;
 
-  const involvedList = [{ subjectId: evidence.subjectId, role: null }, ...evidence.involvedParties];
+  const involvedList = [{ subjectId: evidence.subjectId, role: null }, ...(evidence.involvedParties ?? [])];
 
   return (
     <div className="thin-scrollbar max-h-96 overflow-y-auto rounded-md border border-neutral-800 bg-neutral-950/40 p-4 text-sm">
@@ -69,10 +71,7 @@ export function EvidenceDetailPanel({
                 : `${formatClock(evidence.earliestPossibleTime)}–${formatClock(evidence.latestPossibleTime)} (reported ${formatClock(evidence.eventTime)})`
           }
         />
-        <Row
-          label="Location"
-          value={`${evidence.location.name} (${evidence.location.lat.toFixed(4)}, ${evidence.location.lng.toFixed(4)})`}
-        />
+        <Row label="Location" value={formatLocationLabel(evidence)} />
       </dl>
 
       <p className="mb-3 text-sm text-neutral-300">"{evidence.event}"</p>
@@ -91,6 +90,8 @@ export function EvidenceDetailPanel({
           })}
         </ul>
       </div>
+
+      <EvidenceLocationMap evidence={evidence} />
 
       {evidence.attachments && evidence.attachments.length > 0 && (
         <div className="mb-3">

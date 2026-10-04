@@ -65,7 +65,7 @@ export function EvidenceCard({ evidence, subjects, position, analysis, isSelecte
     return () => cancelAnimationFrame(raf);
   }, [isNew]);
 
-  const Icon = TYPE_ICON[evidence.evidenceType];
+  const Icon = TYPE_ICON[evidence.evidenceType] ?? HelpCircle;
   const time = formatCardTime(evidence);
 
   const inConflict = analysis.conflicts.some((c) => c.evidenceIds.includes(evidence.id));
@@ -73,7 +73,7 @@ export function EvidenceCard({ evidence, subjects, position, analysis, isSelecte
   const inAi = analysis.aiSuggestions.some((s) => s.status === "pending" && s.evidenceIds.includes(evidence.id));
 
   const avatarSubjectIds = Array.from(
-    new Set([evidence.subjectId, ...evidence.involvedParties.map((p) => p.subjectId)])
+    new Set([evidence.subjectId, ...(evidence.involvedParties ?? []).map((p) => p.subjectId)])
   );
   const shownAvatars = avatarSubjectIds.slice(0, 3);
   const overflowCount = avatarSubjectIds.length - shownAvatars.length;

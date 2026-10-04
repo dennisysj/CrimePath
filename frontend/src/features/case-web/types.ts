@@ -21,10 +21,17 @@ export type EvidenceType =
 
 export type TimeCertainty = "exact" | "approximate" | "range";
 
+/**
+ * lat/lng are optional: plenty of evidence only has a text location
+ * ("somewhere downtown"). Only evidence with a valid pair is mapped — see
+ * locationUtils.ts.
+ */
 export interface EvidenceLocation {
   name: string;
-  lat: number;
-  lng: number;
+  lat?: number;
+  lng?: number;
+  /** Where the coordinates came from, e.g. "Image EXIF", "Vehicle GPS". */
+  source?: string;
 }
 
 /**

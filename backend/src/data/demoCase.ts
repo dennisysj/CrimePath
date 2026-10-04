@@ -28,8 +28,11 @@ export type TimeCertainty = "exact" | "approximate" | "range";
 
 export interface EvidenceLocation {
   name: string;
-  lat: number;
-  lng: number;
+  /** Optional: text-only locations ("somewhere downtown") have no coordinates. */
+  lat?: number;
+  lng?: number;
+  /** Where the coordinates came from, e.g. "Image EXIF", "Vehicle GPS". */
+  source?: string;
 }
 
 export interface Evidence {

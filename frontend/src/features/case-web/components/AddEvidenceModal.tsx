@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Check } from "lucide-react";
 import type { Evidence, EvidenceType, Subject, SubjectKind } from "../types";
 import { extractEvidenceDraft } from "../extractApi";
+import { getEvidenceCoordinates } from "../locationUtils";
 import { StepSource } from "./addEvidenceWizard/StepSource";
 import { StepDetails } from "./addEvidenceWizard/StepDetails";
 import { StepUploads } from "./addEvidenceWizard/StepUploads";
@@ -38,8 +39,13 @@ function asWizardType(value: string | undefined): EvidenceType | null {
   return null;
 }
 
+/** Times without an offset are wall-clock times; read them as UTC like the rest of the timeline, not as browser-local. */
+function parseWallClock(iso: string): Date {
+  return new Date(/(Z|[+-]\d{2}:?\d{2})$/i.test(iso) ? iso : `${iso}Z`);
+}
+
 function isoToDateAndClock(iso: string): { date: string; clock: ClockValue } | null {
-  const parsed = new Date(iso);
+  const parsed = parseWallClock(iso);
   if (Number.isNaN(parsed.getTime())) return null;
   let hour = parsed.getUTCHours();
   const period: ClockValue["period"] = hour >= 12 ? "PM" : "AM";
@@ -85,7 +91,10 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
       const key = item.location.name.toLowerCase();
       const existing = byName.get(key);
       if (existing) existing.count += 1;
-      else byName.set(key, { name: item.location.name, lat: item.location.lat, lng: item.location.lng, count: 1 });
+      else {
+        const coords = getEvidenceCoordinates(item);
+        byName.set(key, { name: item.location.name, lat: coords?.lat ?? null, lng: coords?.lng ?? null, count: 1 });
+      }
     });
     return Array.from(byName.values()).sort((a, b) => b.count - a.count);
   }, [evidence]);
@@ -153,7 +162,8 @@ export function AddEvidenceModal({ open, subjects, evidence, onClose, onSubmit, 
         if (parsed) {
           patch.date = parsed.date;
           patch.approxTime = { ...parsed.clock, second: "00" };
-          const marginMs = new Date(extracted.latestPossibleTime).getTime() - new Date(extracted.eventTime).getTime();
+          const marginMs =
+            parseWallClock(extracted.latestPossibleTime).getTime() - parseWallClock(extracted.eventTime).getTime();
           patch.approxMarginMinutes = String(Math.max(1, Math.round(Math.abs(marginMs) / 60_000)));
           patch.certainty = "approximate";
         }

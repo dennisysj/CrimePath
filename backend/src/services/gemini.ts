@@ -84,6 +84,16 @@ Timing rules - always produce a real, usable window, never leave it vague:
 evidenceType category - e.g. evidenceType "cctv" pairs with source like "CCTV camera, north
 entrance log". Keep "notes" null unless there's a genuine ambiguity worth flagging.`;
 
+/**
+ * Gemini returns wall-clock times with no offset. The rest of the app stores
+ * wall-clock times as UTC ("...Z") and displays them with getUTC*, so tag
+ * them the same way instead of letting each client guess a timezone.
+ */
+function asWallClockUtc(value: string): string {
+  if (!value || /(Z|[+-]\d{2}:?\d{2})$/i.test(value)) return value;
+  return `${value}Z`;
+}
+
 interface RawExtraction {
   subjectName: string;
   evidenceType: EvidenceType;
@@ -117,9 +127,9 @@ export async function extractEvidenceFromText(
       source: parsed.source,
       notes: parsed.notes ?? undefined,
       timeCertainty: parsed.timeCertainty,
-      eventTime: parsed.eventTime,
-      earliestPossibleTime: parsed.earliestPossibleTime,
-      latestPossibleTime: parsed.latestPossibleTime,
+      eventTime: asWallClockUtc(parsed.eventTime),
+      earliestPossibleTime: asWallClockUtc(parsed.earliestPossibleTime),
+      latestPossibleTime: asWallClockUtc(parsed.latestPossibleTime),
     },
     extractedSubjectName: parsed.subjectName,
     extractedLocationName: parsed.locationName,
