@@ -4,130 +4,15 @@ import { matchesSubjectFilter, useCaseWebStore } from "../store";
 import { getCaseHistory, getEvidenceHistory } from "../api";
 import { MIN_ROUTE_POINTS, getRoutePoints } from "../locationUtils";
 import type { Crime, Evidence, Subject } from "../types";
-import { formatDateTime } from "../timeUtils";
 import { AddEvidenceModal } from "./AddEvidenceModal";
 import { CardTimeline, type CardTimelineHandle } from "./CardTimeline";
 import { EventPathModal } from "./EventPathModal";
 import { EvidenceList } from "./EvidenceList";
 import { ManageSubjectsModal } from "./ManageSubjectsModal";
 import { EditCaseModal } from "./EditCaseModal";
+import { EvidenceDashboard } from "./EvidenceDashboard";
+import { STATUS_COLORS } from "./statusColors";
 import inquisitorImage from "../../../../../src/images/inquisitor.png";
-
-interface AllEvidencePageProps {
-  open: boolean;
-  caseName: string;
-  subjects: Subject[];
-  evidence: Evidence[];
-  onClose: () => void;
-  onSelectEvidence: (id: string) => void;
-}
-
-const EVIDENCE_TYPE_LABEL: Record<Evidence["evidenceType"], string> = {
-  witness: "Witness",
-  cctv: "CCTV",
-  image: "Image",
-  video: "Video",
-  document: "Document",
-  gps: "GPS",
-  transaction: "Transaction",
-  other: "Other",
-};
-
-function AllEvidencePage({ open, caseName, subjects, evidence, onClose, onSelectEvidence }: AllEvidencePageProps) {
-  const [query, setQuery] = useState("");
-  const subjectById = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
-
-  const filtered = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    const sorted = [...evidence].sort((a, b) => new Date(b.eventTime).getTime() - new Date(a.eventTime).getTime());
-    if (!normalized) return sorted;
-
-    return sorted.filter((item) => {
-      const subject = subjectById.get(item.subjectId);
-      return [
-        item.event,
-        item.source,
-        item.location.name,
-        item.notes,
-        item.evidenceType,
-        subject?.name,
-      ]
-        .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(normalized));
-    });
-  }, [evidence, query, subjectById]);
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-neutral-950 text-neutral-100">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-800 px-6 py-4">
-        <div>
-          <h2 className="text-lg font-semibold">All Evidence</h2>
-          <p className="mt-0.5 font-mono text-xs text-neutral-500">
-            {caseName} · {filtered.length} of {evidence.length} items
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search evidence"
-            className="w-64 rounded border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-sm text-neutral-100 placeholder:text-neutral-600 focus:border-sky-500 focus:outline-none"
-          />
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close all evidence"
-            className="rounded border border-neutral-700 p-2 text-neutral-300 hover:border-neutral-500 hover:text-white"
-          >
-            <X size={16} />
-          </button>
-        </div>
-      </header>
-
-      <main className="thin-scrollbar flex-1 overflow-auto px-6 py-5">
-        <div className="grid gap-3">
-          {filtered.map((item) => {
-            const subject = subjectById.get(item.subjectId);
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                  onSelectEvidence(item.id);
-                  onClose();
-                }}
-                className="rounded-md border border-neutral-800 bg-neutral-900/70 p-4 text-left transition-colors hover:border-neutral-600 hover:bg-neutral-900"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded bg-neutral-800 px-2 py-1 text-[10px] font-medium uppercase text-neutral-300">
-                      {EVIDENCE_TYPE_LABEL[item.evidenceType]}
-                    </span>
-                    <span className="text-xs text-neutral-400">{subject?.name ?? item.subjectId}</span>
-                  </div>
-                  <span className="font-mono text-xs text-neutral-500">{formatDateTime(item.eventTime, true)}</span>
-                </div>
-                <p className="mt-3 text-sm font-medium text-neutral-100">{item.event}</p>
-                <div className="mt-2 grid gap-1 text-xs text-neutral-500 sm:grid-cols-2">
-                  <span>{item.location.name}</span>
-                  <span>{item.source}</span>
-                </div>
-                {item.notes && <p className="mt-2 text-xs text-neutral-400">{item.notes}</p>}
-              </button>
-            );
-          })}
-          {filtered.length === 0 && (
-            <div className="rounded-md border border-dashed border-neutral-800 px-4 py-10 text-center text-sm text-neutral-500">
-              No evidence matches that search.
-            </div>
-          )}
-        </div>
-      </main>
-    </div>
-  );
-}
 
 export function CaseWebPage() {
   const {
@@ -398,6 +283,22 @@ export function CaseWebPage() {
             <Trash2 size={14} />
           </button>
           <button
+            onClick={() => setAllEvidenceOpen(true)}
+            className="inline-flex items-center gap-2 rounded bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-sky-500"
+          >
+            <Archive size={15} />
+            Evidence
+            {analysis.conflicts.length > 0 && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-black/25 px-1.5 py-0.5 text-xs font-medium"
+                style={{ color: STATUS_COLORS.conflictRing }}
+              >
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: STATUS_COLORS.conflictRing }} />
+                {analysis.conflicts.length}
+              </span>
+            )}
+          </button>
+          <button
             type="button"
             onClick={() => setPathSubjectIds(pathTarget.subjectIds)}
             disabled={pathTarget.pointCount < MIN_ROUTE_POINTS}
@@ -422,13 +323,6 @@ export function CaseWebPage() {
             className="rounded border border-neutral-700 px-3 py-1.5 text-sm font-medium text-neutral-200 hover:border-neutral-500 hover:text-white"
           >
             New Case
-          </button>
-          <button
-            onClick={() => setAllEvidenceOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded border border-neutral-700 px-3 py-1.5 text-sm font-medium text-neutral-200 hover:border-neutral-500 hover:text-white"
-          >
-            <Archive size={15} />
-            All Evidence
           </button>
           <button
             type="button"
@@ -589,11 +483,16 @@ export function CaseWebPage() {
 
       {newCaseModal}
 
-      <AllEvidencePage
+      <EvidenceDashboard
         open={allEvidenceOpen}
+        caseId={selectedCaseId}
         caseName={caseName}
         subjects={subjects}
         evidence={evidence}
+        analysis={analysis}
+        subjectFilter={subjectFilter}
+        onToggleSubject={toggleSubjectFilter}
+        onClearSubjectFilter={clearSubjectFilter}
         onClose={() => setAllEvidenceOpen(false)}
         onSelectEvidence={selectEvidence}
       />

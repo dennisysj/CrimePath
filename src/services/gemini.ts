@@ -216,3 +216,81 @@ export async function extractCrimeFromText(
     end: parsed.end ? asWallClockUtc(parsed.end) : null,
   };
 }
+
+const summarySchema = {
+  type: Type.OBJECT,
+  properties: {
+    bullets: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description: "3-6 short, specific insight bullets for an investigator, each one sentence.",
+    },
+  },
+  required: ["bullets"],
+};
+
+const SUMMARY_SYSTEM_INSTRUCTION = `You summarize an investigative case's evidence for a human investigator.
+Write 3-6 short bullet-point insights, each one sentence, in neutral language - never claim guilt or
+that a source is lying, only describe what the evidence shows and where it's inconsistent or thin.
+Call out, where relevant: where a subject was seen (places and roughly when), any flagged conflicts
+(name the subject and what's inconsistent, without saying who's wrong), unverified witness
+statements worth corroborating, and any genuinely notable pattern (e.g. two subjects placed at the
+same spot around the same time, several items missing a location). Be specific - name subjects,
+places and approximate times rather than speaking in generalities. If there's truly nothing notable
+in a category, just omit it rather than inventing a bullet for it.`;
+
+interface SummaryEvidenceInput {
+  subjectId: string;
+  evidenceType: string;
+  event: string;
+  location: { name: string };
+  eventTime: string;
+  reliability?: string;
+}
+
+interface SummaryConflictInput {
+  evidenceIds: [string, string];
+  explanation: string;
+  resolvedByUncertainty: boolean;
+}
+
+interface SummaryGapInput {
+  subjectId: string;
+  durationMinutes: number;
+}
+
+export async function generateCaseSummary(
+  items: SummaryEvidenceInput[],
+  subjects: { id: string; name: string }[],
+  conflicts: SummaryConflictInput[],
+  gaps: SummaryGapInput[]
+): Promise<string[]> {
+  const subjectName = (id: string) => subjects.find((s) => s.id === id)?.name ?? id;
+
+  const evidenceLines =
+    items
+      .map((e) => {
+        const unverified = e.reliability && e.reliability !== "verified" && e.reliability !== "corroborated";
+        return `- [${e.evidenceType}] ${subjectName(e.subjectId)} - ${e.event} (${e.location.name}, ${e.eventTime})${unverified ? " [unverified]" : ""}`;
+      })
+      .join("\n") || "(no evidence yet)";
+
+  const conflictLines =
+    conflicts
+      .filter((c) => !c.resolvedByUncertainty)
+      .map((c) => `- ${c.explanation}`)
+      .join("\n") || "(none)";
+
+  const gapLines =
+    gaps.map((g) => `- ${subjectName(g.subjectId)}: ${g.durationMinutes} min unaccounted`).join("\n") || "(none)";
+
+  const prompt = `Evidence:\n${evidenceLines}\n\nUnresolved conflicts:\n${conflictLines}\n\nGaps:\n${gapLines}`;
+
+  const raw = await generateJson({
+    contents: prompt,
+    systemInstruction: SUMMARY_SYSTEM_INSTRUCTION,
+    responseSchema: summarySchema,
+  });
+  const parsed = JSON.parse(raw) as { bullets: string[] };
+  return parsed.bullets;
+}
