@@ -12,3 +12,5 @@ Run it from the backend folder:
 
 
 node test-image-metadata.js path/to/image.jpg
+
+.
