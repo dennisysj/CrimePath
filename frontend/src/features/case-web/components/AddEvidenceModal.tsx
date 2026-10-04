@@ -128,6 +128,8 @@ export function AddEvidenceModal({
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
   const [draftSubjectName, setDraftSubjectName] = useState<string | null>(null);
+  const [draftReporterName, setDraftReporterName] = useState<string | null>(null);
+  const [draftReporterMatched, setDraftReporterMatched] = useState(false);
 
   // Re-trigger the slide-in transition every time the step changes: render
   // at the offset position first, then flip to "entered" next frame so the
@@ -170,6 +172,8 @@ export function AddEvidenceModal({
     setDraftText("");
     setExtractError(null);
     setDraftSubjectName(null);
+    setDraftReporterName(null);
+    setDraftReporterMatched(false);
   }
 
   function handleClose() {
@@ -188,7 +192,8 @@ export function AddEvidenceModal({
     setExtracting(true);
     setExtractError(null);
     try {
-      const { evidence: extracted, extractedSubjectName, extractedLocationName } = await extractEvidenceDraft(draftText);
+      const { evidence: extracted, extractedSubjectName, extractedLocationName, extractedReporterName } =
+        await extractEvidenceDraft(draftText);
       const patch: Partial<WizardDraft> = {};
       const evidenceType = asWizardType(extracted.evidenceType);
 
@@ -242,6 +247,18 @@ export function AddEvidenceModal({
       setDraftSubjectName(extractedSubjectName ?? null);
       const match = extractedSubjectName ? findSubjectByName(subjects, extractedSubjectName) : undefined;
       if (match) patch.subjectId = match.id;
+
+      const reporterMatch = extractedReporterName ? findSubjectByName(subjects, extractedReporterName) : undefined;
+      setDraftReporterName(extractedReporterName ?? null);
+      setDraftReporterMatched(!!reporterMatch);
+      if (reporterMatch) {
+        // Replace any earlier "reported_by" tag (re-running extraction),
+        // keep every other role the investigator may have added by hand.
+        patch.involvedParties = [
+          ...draft.involvedParties.filter((p) => p.role !== "reported_by"),
+          { subjectId: reporterMatch.id, role: "reported_by" },
+        ];
+      }
 
       setDraft((current) => ({ ...current, ...patch }));
       if (patch.evidenceType && step === 1) goTo(2, "forward");
@@ -511,6 +528,15 @@ export function AddEvidenceModal({
                       {draftSubjectName && (
                         <span className="text-xs text-neutral-500">
                           Mentioned: <span className="text-neutral-300">{draftSubjectName}</span>
+                        </span>
+                      )}
+                      {draftReporterName && (
+                        <span className="text-xs text-neutral-500">
+                          Reported by:{" "}
+                          <span className="text-neutral-300">{draftReporterName}</span>
+                          {!draftReporterMatched && (
+                            <span className="text-amber-400"> — no matching subject, add them in Details</span>
+                          )}
                         </span>
                       )}
                     </div>

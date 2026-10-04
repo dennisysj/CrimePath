@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { MapPin, PanelLeftClose, PanelLeftOpen, Paperclip, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -37,6 +37,10 @@ const EVIDENCE_TYPE_LABEL: Record<Evidence["evidenceType"], string> = {
 };
 
 const COLLAPSE_KEY = "crimepath:sidebarCollapsed";
+const SUMMARY_HEIGHT_KEY = "crimepath:aiSummaryHeight";
+const SUMMARY_MIN_HEIGHT = 56;
+const SUMMARY_MAX_HEIGHT = 520;
+const SUMMARY_DEFAULT_HEIGHT = 220;
 
 /** Left-panel subject chips + the full, time-sorted evidence list. Collapses to a thin strip; state persists in localStorage. */
 export function EvidenceList({
@@ -54,6 +58,8 @@ export function EvidenceList({
   const filtering = subjectFilter.length > 0;
   const countLabel = filtering ? `${evidence.length} of ${totalCount}` : `${evidence.length}`;
   const [collapsed, setCollapsed] = useState(() => readPersisted(COLLAPSE_KEY, false));
+  const [summaryHeight, setSummaryHeight] = useState(() => readPersisted(SUMMARY_HEIGHT_KEY, SUMMARY_DEFAULT_HEIGHT));
+  const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const reduceMotion = useReducedMotion();
 
   const subjectById = new Map(subjects.map((s) => [s.id, s]));
@@ -66,6 +72,28 @@ export function EvidenceList({
       toast(next ? "Evidence list collapsed" : "Evidence list expanded");
       return next;
     });
+  }
+
+  function startResizingSummary(e: React.MouseEvent) {
+    e.preventDefault();
+    resizeRef.current = { startY: e.clientY, startHeight: summaryHeight };
+
+    function onMove(ev: MouseEvent) {
+      if (!resizeRef.current) return;
+      const next = resizeRef.current.startHeight + (ev.clientY - resizeRef.current.startY);
+      setSummaryHeight(Math.min(SUMMARY_MAX_HEIGHT, Math.max(SUMMARY_MIN_HEIGHT, next)));
+    }
+    function onUp() {
+      resizeRef.current = null;
+      setSummaryHeight((current) => {
+        writePersisted(SUMMARY_HEIGHT_KEY, current);
+        return current;
+      });
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   }
 
   return (
@@ -94,9 +122,22 @@ export function EvidenceList({
         </div>
       ) : (
         <div className="flex h-full min-w-[320px] flex-col">
-          <div className="border-b p-2" style={{ borderColor: "var(--border)" }}>
+          <div className="thin-scrollbar overflow-y-auto p-2" style={{ height: summaryHeight }}>
             <AiSummarySection />
           </div>
+          <button
+            type="button"
+            onMouseDown={startResizingSummary}
+            aria-label="Drag to resize the AI summary panel"
+            title="Drag to resize"
+            className="group relative h-2 w-full flex-shrink-0 cursor-row-resize border-b focus-visible:outline-none"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <span
+              className="absolute left-1/2 top-1/2 h-1 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors group-hover:bg-[var(--accent)]"
+              style={{ background: "var(--border-strong)" }}
+            />
+          </button>
 
           <div className="flex items-center justify-between border-b p-3" style={{ borderColor: "var(--border)" }}>
             <span className="text-xs font-semibold" style={{ color: "var(--text)" }}>

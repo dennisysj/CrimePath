@@ -27,7 +27,20 @@ const extractionSchema = {
     evidenceType: { type: Type.STRING, enum: [...EVIDENCE_TYPES] },
     event: {
       type: Type.STRING,
-      description: "One sentence describing what was observed, close to the source wording.",
+      description:
+        "One sentence describing what was observed. If the text names who's reporting it (a witness, " +
+        "an officer, etc.), name them as the one who saw/said it - e.g. 'Indigo saw Diego at the park' " +
+        "rather than 'Witness reports seeing Diego at the park'. Only fall back to a generic subject " +
+        "('Witness', 'CCTV') when the text genuinely doesn't name a reporter.",
+    },
+    reporterName: {
+      type: Type.STRING,
+      nullable: true,
+      description:
+        "The name of whoever is reporting this (a witness, officer, etc.), if the text names one " +
+        "separately from the subject - e.g. 'Indigo' in 'Indigo saw Diego at the park'. Null if the " +
+        "text doesn't name a reporter (an anonymous tip, unattributed CCTV, etc.), or if the reporter " +
+        "and the subject are the same person.",
     },
     locationName: {
       type: Type.STRING,
@@ -54,6 +67,7 @@ const extractionSchema = {
     "subjectName",
     "evidenceType",
     "event",
+    "reporterName",
     "locationName",
     "source",
     "notes",
@@ -82,7 +96,11 @@ Timing rules - always produce a real, usable window, never leave it vague:
 - All three ISO datetimes must have no "Z" or timezone offset suffix - plain "YYYY-MM-DDTHH:mm:ss".
 
 The subject is whoever the evidence places at a time and location - never the witness who reports it.
-If a witness is named, mention them in "source" (e.g. "Witness statement from Subject C").
+When the text names who's reporting it, name them specifically, in both "event" and "source" (e.g.
+"event": "Indigo saw Diego at the park", "source": "Witness statement: Indigo") instead of a generic
+"Witness"/"a witness" - that's what lets an investigator later check whether the reporter's own
+account of their own whereabouts actually lines up with them having been able to see this. Only use
+a generic subject ("Witness", "CCTV") when the text genuinely never names a reporter.
 
 "source" is a short citation phrase (how this evidence reached the investigator), not the
 evidenceType category - e.g. evidenceType "cctv" pairs with source like "CCTV camera, north
@@ -102,6 +120,7 @@ interface RawExtraction {
   subjectName: string;
   evidenceType: EvidenceType;
   event: string;
+  reporterName: string | null;
   locationName: string;
   source: string;
   notes: string | null;
@@ -137,6 +156,7 @@ export async function extractEvidenceFromText(
     },
     extractedSubjectName: parsed.subjectName,
     extractedLocationName: parsed.locationName,
+    extractedReporterName: parsed.reporterName ?? undefined,
   };
 }
 

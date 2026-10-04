@@ -1809,7 +1809,27 @@ type GeocodeResult = { lat: number; lng: number; label: string };
  * the request fails.
  */
 async function geocodePlace(name: string): Promise<GeocodeResult | null> {
-  return process.env.GOOGLE_MAPS_API_KEY ? geocodeWithGoogle(name, process.env.GOOGLE_MAPS_API_KEY) : geocodeWithNominatim(name);
+  const geocodeOnce = (q: string) =>
+    process.env.GOOGLE_MAPS_API_KEY ? geocodeWithGoogle(q, process.env.GOOGLE_MAPS_API_KEY) : geocodeWithNominatim(q);
+
+  const direct = await geocodeOnce(name);
+  if (direct) return direct;
+
+  // Nominatim's free-text search can fail on e.g. "Lansdowne Skytrain
+  // Station" even though "Lansdowne Station" or just "Lansdowne" resolves
+  // fine - this app's whole case data is built around SkyTrain stations, so
+  // retry with the noisy word(s) stripped before giving up. A no-op extra
+  // round-trip for Google, which doesn't have this problem.
+  const variants = [
+    name.replace(/\bsky\s*train\b/gi, "").replace(/\s+/g, " ").trim(),
+    name.replace(/\bsky\s*train\b/gi, "").replace(/\bstation\b/gi, "").replace(/\s+/g, " ").trim(),
+  ].filter((q, i, arr) => q && q !== name && arr.indexOf(q) === i);
+
+  for (const q of variants) {
+    const result = await geocodeOnce(q);
+    if (result) return result;
+  }
+  return null;
 }
 
 /** Nominatim, biased toward Greater Vancouver (where the case data is) but not limited to it. */

@@ -201,6 +201,13 @@ export interface ExtractEvidenceResponse {
    */
   extractedSubjectName?: string;
   extractedLocationName?: string;
+  /**
+   * The reporter's name, when the text names one separately from the
+   * subject ("Indigo said she saw Diego..." -> "Indigo") - lets the caller
+   * tag them "reported_by" in involvedParties instead of that name only
+   * ever showing up buried in prose.
+   */
+  extractedReporterName?: string;
 }
 
 export interface HealthResponse {
