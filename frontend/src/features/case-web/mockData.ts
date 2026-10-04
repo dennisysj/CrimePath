@@ -235,6 +235,7 @@ export const evidence: Evidence[] = [
 export const conflicts: Conflict[] = [
   {
     id: "conflict-1",
+    kind: "travel_time",
     evidenceIds: ["ev-a4", "ev-a5"],
     requiredMinutes: 24.2,
     availableMinutes: 11.9,

@@ -1,6 +1,10 @@
 import type { AiSuggestionStatus, CaseAnalysis, CaseSummary, Crime, Evidence, Reliability, Subject } from "./types";
 
-export type SubjectInput = Omit<Subject, "id">;
+export type SubjectInput = Omit<Subject, "id" | "photoUrl">;
+export interface ProfilePictureInput {
+  fileName: string;
+  dataUrl: string;
+}
 export type CrimeInput = Omit<Crime, "id">;
 
 export interface CaseUpdate {
@@ -32,6 +36,8 @@ export interface CaseWebApi {
   addSubject(caseId: string, input: SubjectInput): Promise<Subject>;
   updateSubject(caseId: string, id: string, input: Partial<SubjectInput>): Promise<Subject>;
   removeSubject(caseId: string, id: string): Promise<void>;
+  setSubjectPhoto(caseId: string, id: string, input: ProfilePictureInput): Promise<Subject>;
+  removeSubjectPhoto(caseId: string, id: string): Promise<Subject>;
   getEvidence(caseId: string): Promise<Evidence[]>;
   addEvidence(caseId: string, input: Omit<Evidence, "id">): Promise<Evidence>;
   updateEvidence(caseId: string, id: string, input: Omit<Evidence, "id">): Promise<Evidence>;
@@ -218,6 +224,24 @@ class MockCaseWebApi implements CaseWebApi {
       .map((e) => ({ ...e, involvedParties: e.involvedParties.filter((p) => p.subjectId !== id) }));
     data.subjects = data.subjects.filter((s) => s.id !== id);
     return delay(undefined);
+  }
+
+  /** No file storage in mock mode: the data URL itself is the picture. */
+  setSubjectPhoto(caseId: string, id: string, input: ProfilePictureInput): Promise<Subject> {
+    return this.updateSubjectPhoto(caseId, id, input.dataUrl);
+  }
+
+  removeSubjectPhoto(caseId: string, id: string): Promise<Subject> {
+    return this.updateSubjectPhoto(caseId, id, null);
+  }
+
+  private updateSubjectPhoto(caseId: string, id: string, photoUrl: string | null): Promise<Subject> {
+    const data = this.data(caseId);
+    const current = data.subjects.find((s) => s.id === id);
+    if (!current) return Promise.reject(new Error("Subject not found"));
+    const updated = { ...current, photoUrl };
+    data.subjects = data.subjects.map((s) => (s.id === id ? updated : s));
+    return delay(updated);
   }
 
   getEvidence(caseId: string): Promise<Evidence[]> {
@@ -451,6 +475,19 @@ class HttpCaseWebApi implements CaseWebApi {
 
   removeSubject(caseId: string, id: string): Promise<void> {
     return request<void>(`/cases/${caseId}/subjects/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  setSubjectPhoto(caseId: string, id: string, input: ProfilePictureInput): Promise<Subject> {
+    return request<Subject>(`/cases/${caseId}/subjects/${encodeURIComponent(id)}/profile-picture`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  }
+
+  removeSubjectPhoto(caseId: string, id: string): Promise<Subject> {
+    return request<Subject>(`/cases/${caseId}/subjects/${encodeURIComponent(id)}/profile-picture`, {
+      method: "DELETE",
+    });
   }
 
   getEvidence(caseId: string): Promise<Evidence[]> {

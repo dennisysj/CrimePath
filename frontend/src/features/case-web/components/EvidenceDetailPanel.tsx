@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FileText, Paperclip, Pencil, Trash2 } from "lucide-react";
 import type { AiSuggestion, CaseAnalysis, Evidence, EvidenceType, Subject } from "../types";
-import { RELIABILITY_OPTIONS, ROLE_LABELS, type Reliability } from "../types";
+import { RELIABILITY_OPTIONS, ROLE_LABELS, conflictBadgeLabel, gapShortLabel, type Reliability } from "../types";
 
 const RELIABILITY_COLOR: Record<Reliability, string> = {
   unknown: "text-neutral-400",
@@ -209,14 +209,19 @@ export function EvidenceDetailPanel({
         <div className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Connections</h3>
           {relatedConflicts.map((c) => (
-            <Note key={c.id} tone="red" badge="Possible conflict" text={c.explanation} />
+            <Note
+              key={c.id}
+              tone={c.resolvedByUncertainty ? "neutral" : "red"}
+              badge={conflictBadgeLabel(c)}
+              text={c.explanation}
+            />
           ))}
           {relatedGaps.map((g) => (
             <Note
               key={g.id}
               tone="neutral"
               badge="Gap"
-              text={`${subjects.find((s) => s.id === g.subjectId)?.name ?? "Subject"} — ${Math.round(g.durationMinutes)} min unaccounted between ${formatDateTime(g.start)} and ${formatDateTime(g.end)}.`}
+              text={`${subjects.find((s) => s.id === g.subjectId)?.name ?? "Subject"} — ${gapShortLabel(g)} between ${formatDateTime(g.start)} and ${formatDateTime(g.end)}.`}
             />
           ))}
           {relatedCorroborations.map((c) => (

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { FileText, Paperclip, Pencil, Trash2 } from "lucide-react";
 import type { AiSuggestion, CaseAnalysis, Evidence, Subject } from "../types";
+import { conflictBadgeLabel, gapShortLabel } from "../types";
 import type { Selection } from "../store";
 import { formatDateTime } from "../timeUtils";
 import { formatBytes } from "../attachmentUtils";
@@ -156,7 +157,7 @@ export function DetailsPanel({
                 <ConnectionNote
                   key={c.id}
                   tone={c.resolvedByUncertainty ? "neutral" : "red"}
-                  badge={c.resolvedByUncertainty ? "Compatible within uncertainty window" : "Possible conflict"}
+                  badge={conflictBadgeLabel(c)}
                   text={c.explanation}
                 />
               ))}
@@ -190,7 +191,7 @@ export function DetailsPanel({
                   c.resolvedByUncertainty ? "bg-neutral-800 text-neutral-300" : "bg-red-500/15 text-red-400"
                 }`}
               >
-                {c.resolvedByUncertainty ? "Compatible within uncertainty window" : "Possible conflict"}
+                {conflictBadgeLabel(c)}
               </span>
               <p className="text-neutral-400">{c.explanation}</p>
               <p className="mt-1 font-mono text-[10px] text-neutral-600">
@@ -205,7 +206,7 @@ export function DetailsPanel({
           {analysis.gaps.map((g) => (
             <div key={g.id} className="rounded border border-neutral-800 p-2 text-xs">
               <p className="text-neutral-300">
-                {subjectById.get(g.subjectId)?.name ?? "Unknown"} — {Math.round(g.durationMinutes)} min unaccounted
+                {subjectById.get(g.subjectId)?.name ?? "Unknown"} — {gapShortLabel(g)}
               </p>
               <p className="mt-0.5 font-mono text-[10px] text-neutral-600">
                 {formatDateTime(g.start)} - {formatDateTime(g.end)}

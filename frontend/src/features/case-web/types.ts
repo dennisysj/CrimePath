@@ -2,12 +2,16 @@
 // shape of the backend's eventual API but are NOT imported from
 // @crimepath/shared — we'll align the two once the real engine is wired up.
 
+import { formatDuration } from "./timeUtils";
+
 export type SubjectKind = "person" | "vehicle" | "phone" | "other";
 
 export interface Subject {
   id: string;
   name: string;
   kind: SubjectKind;
+  /** Profile picture (case_subjects.profile_file_url); null/absent shows the name's initial. */
+  photoUrl?: string | null;
 }
 
 export interface CaseSummary {
@@ -114,8 +118,34 @@ export interface Crime {
 }
 
 /**
- * A travel/time feasibility conflict between two pieces of evidence for the
- * same subject, as computed by the (future) deterministic engine.
+ * How a conflict was detected:
+ *  - same_time_different_place / travel_time: deterministic distance vs time check
+ *  - statement: AI reading of the accounts (e.g. contradictory witness claims)
+ */
+export type ConflictKind = "same_time_different_place" | "travel_time" | "statement";
+
+export const CONFLICT_KIND_LABELS: Record<ConflictKind, string> = {
+  same_time_different_place: "Same time, different place",
+  travel_time: "Impossible travel time",
+  statement: "Conflicting statements",
+};
+
+/** Short connector/tooltip text: travel numbers when the engine measured them, else the kind label. */
+export function conflictShortLabel(c: Pick<Conflict, "kind" | "requiredMinutes" | "availableMinutes">): string {
+  if (c.requiredMinutes === null || c.availableMinutes === null) return CONFLICT_KIND_LABELS[c.kind];
+  return `needs ~${formatDuration(c.requiredMinutes)} · has ~${formatDuration(c.availableMinutes)}`;
+}
+
+/** Badge text for conflict notes, e.g. "Possible conflict · Same time, different place". */
+export function conflictBadgeLabel(c: Pick<Conflict, "kind" | "resolvedByUncertainty">): string {
+  return c.resolvedByUncertainty
+    ? "Compatible within uncertainty window"
+    : `Possible conflict · ${CONFLICT_KIND_LABELS[c.kind]}`;
+}
+
+/**
+ * A conflict between two pieces of evidence for the same subject, as computed
+ * by the backend analysis engine.
  *
  * Framing is always neutral: a conflict never implies a source is lying,
  * only that the two accounts may be inconsistent if their reported times
@@ -123,9 +153,11 @@ export interface Crime {
  */
 export interface Conflict {
   id: string;
+  kind: ConflictKind;
   evidenceIds: [string, string];
-  requiredMinutes: number;
-  availableMinutes: number;
+  /** null for statement conflicts, which have no travel calculation. */
+  requiredMinutes: number | null;
+  availableMinutes: number | null;
   /**
    * true if the conflict only appears when evidence is read at face value
    * (reported times), but disappears under the most generous reading of
@@ -143,7 +175,26 @@ export interface Gap {
   start: string;
   /** ISO string */
   end: string;
+  /** Time left unexplained after the estimated travel between the two places. */
   durationMinutes: number;
+  elapsedMinutes?: number;
+  /** Estimated travel between the two places; null/absent when unknown (no coordinates). */
+  travelMinutes?: number | null;
+}
+
+/** Estimated travel between a subject's consecutive pieces of evidence at different places. */
+export interface TravelLeg {
+  id: string;
+  subjectId: string;
+  evidenceIds: [string, string];
+  distanceKm: number;
+  travelMinutes: number;
+}
+
+/** "1h unaccounted", or "~40 min travel · 20 min unaccounted" when part of the span was travel. */
+export function gapShortLabel(g: Pick<Gap, "durationMinutes" | "travelMinutes">): string {
+  const unaccounted = `${formatDuration(g.durationMinutes)} unaccounted`;
+  return g.travelMinutes ? `~${formatDuration(g.travelMinutes)} travel · ${unaccounted}` : unaccounted;
 }
 
 /**
@@ -176,6 +227,8 @@ export interface AiSuggestion {
 export interface CaseAnalysis {
   conflicts: Conflict[];
   gaps: Gap[];
+  /** Absent from backends/mock data that don't estimate travel. */
+  travelLegs?: TravelLeg[];
   corroborations: Corroboration[];
   aiSuggestions: AiSuggestion[];
 }

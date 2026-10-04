@@ -42,6 +42,15 @@ export function deriveRange(startValue: string, endValue: string): DerivedTimes 
   };
 }
 
+/** A span of minutes for labels: "45 min" under an hour, else "1h", "2h 30min". */
+export function formatDuration(minutes: number): string {
+  const total = Math.max(0, Math.round(minutes));
+  if (total < 60) return `${total} min`;
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+}
+
 /** HH:MM, reading the ISO string's own digits (see note above). */
 export function formatClock(iso: string): string {
   const d = new Date(iso);

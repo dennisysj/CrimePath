@@ -205,7 +205,13 @@ export const CardTimeline = forwardRef<CardTimelineHandle, CardTimelineProps>(fu
             }}
           >
             {subjects.map((s) => (
-              <LaneLabel key={s.id} subject={s} subjects={subjects} y={layout.laneY.get(s.id) ?? 0} />
+              <LaneLabel
+                key={s.id}
+                subject={s}
+                subjects={subjects}
+                y={layout.laneY.get(s.id) ?? 0}
+                height={layout.laneHeight.get(s.id)}
+              />
             ))}
           </div>
         </div>

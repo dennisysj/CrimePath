@@ -1,23 +1,29 @@
 import type { CaseAnalysis, Crime, Evidence, InvolvedRole, Subject } from "../types";
-import { ROLE_LABELS } from "../types";
-import { formatEvidenceTimeLabel } from "../timeUtils";
+import { ROLE_LABELS, conflictShortLabel, gapShortLabel } from "../types";
+import { formatDuration, formatEvidenceTimeLabel } from "../timeUtils";
 
 export const CARD_WIDTH = 172;
 export const CARD_HEIGHT = 108;
-export const COLUMN_GAP = 24;
+/** Space between card columns (and hour sections) — wide enough that the connector between two cards can show its duration label. */
+export const COLUMN_GAP = 136;
 export const LANE_GAP = 60;
 export const RULER_HEIGHT = 56; // UPDATED: was 48 — two clearly separated rows (32px hour headers + 24px tick labels) need more room
 export const STRIP_WIDTH = 152; // wide enough for date-stamped collapsed hour headers
 export const MARGIN = { top: RULER_HEIGHT + 12, left: 16, right: 16, bottom: 16 };
 /** Width of the thin column a crime's start/end marker takes in the time order. */
 export const CRIME_MARKER_WIDTH = 12;
+/** Gap on each side of a crime marker, so a marker between two cards sits inside their usual COLUMN_GAP rather than widening it. */
+const CRIME_MARKER_GAP = (COLUMN_GAP - CRIME_MARKER_WIDTH) / 2;
 /** Extra space under the ruler for crime labels, added only when the case has crimes. */
 export const CRIME_LABEL_ROW = 26;
 /** Minimum gap left between a connector segment and the collapsed block it stops short of. */
 export const COLLAPSED_CLEARANCE = 8;
 
-const COLUMN_STRIDE = CARD_WIDTH + COLUMN_GAP;
+/** Vertical space between cards stacked in one lane at the same timestamp — room for the connector label between them. */
+export const STACK_GAP = 32;
+
 const LANE_STRIDE = CARD_HEIGHT + LANE_GAP;
+const STACK_STRIDE = CARD_HEIGHT + STACK_GAP;
 
 export interface CardPosition {
   id: string;
@@ -91,6 +97,8 @@ export interface CardLayoutResult {
   crimeBands: CrimeBand[];
   /** Top y of each subject's lane row — shared by the fixed lane-label column and the scrollable canvas, so they stay vertically aligned. */
   laneY: Map<string, number>;
+  /** Height of each subject's lane: taller when it stacks several cards at one timestamp. */
+  laneHeight: Map<string, number>;
 }
 
 function minutesBetween(aIso: string, bIso: string): number {
@@ -193,9 +201,26 @@ export function computeCardLayout(
 
   const laneIndexBySubject = new Map<string, number>();
   subjects.forEach((s, i) => laneIndexBySubject.set(s.id, i));
+  // Horizontal position is time; items in one lane at the same instant stack
+  // vertically, so each lane is as tall as its deepest stack.
+  const stackDepth = new Map<string, number>();
+  const perInstant = new Map<string, number>();
+  evidence.forEach((e) => {
+    const key = `${e.subjectId}|${new Date(e.eventTime).getTime()}`;
+    const n = (perInstant.get(key) ?? 0) + 1;
+    perInstant.set(key, n);
+    stackDepth.set(e.subjectId, Math.max(stackDepth.get(e.subjectId) ?? 1, n));
+  });
   const laneY = new Map<string, number>();
+  const laneHeight = new Map<string, number>();
   const lanesTop = MARGIN.top + (crimes.length > 0 ? CRIME_LABEL_ROW : 0);
-  subjects.forEach((s, i) => laneY.set(s.id, lanesTop + i * LANE_STRIDE));
+  let laneCursor = lanesTop;
+  subjects.forEach((s) => {
+    const height = (stackDepth.get(s.id) ?? 1) * STACK_STRIDE - STACK_GAP;
+    laneY.set(s.id, laneCursor);
+    laneHeight.set(s.id, height);
+    laneCursor += height + LANE_GAP;
+  });
 
   const conflictEvidenceIds = new Set(analysis.conflicts.flatMap((c) => c.evidenceIds));
 
@@ -253,10 +278,31 @@ export function computeCardLayout(
     const collapsed = collapsedHours.has(key);
     const hasConflict = items.some((e) => conflictEvidenceIds.has(e.id));
     const startX = cursorX;
-    const slotWidth = (slot: Slot) => (slot.kind === "evidence" ? CARD_WIDTH : CRIME_MARKER_WIDTH);
+
+    // Evidence sharing an exact timestamp forms one column, so every lane
+    // places it at the same x. Two items in the same lane at that instant
+    // stack vertically in it.
+    type Column =
+      | { kind: "crime"; slot: Extract<Slot, { kind: "crime" }> }
+      | { kind: "time"; items: Evidence[] };
+    const columns: Column[] = [];
+    sectionItems.forEach((slot) => {
+      if (slot.kind === "crime") {
+        columns.push({ kind: "crime", slot });
+        return;
+      }
+      const last = columns[columns.length - 1];
+      if (last?.kind === "time" && new Date(last.items[0].eventTime).getTime() === slot.time) last.items.push(slot.evidence);
+      else columns.push({ kind: "time", items: [slot.evidence] });
+    });
+    const columnWidth = (col: Column) => (col.kind === "crime" ? CRIME_MARKER_WIDTH : CARD_WIDTH);
+
+    const gapAfter = (i: number) =>
+      columns[i].kind === "crime" || columns[i + 1]?.kind === "crime" ? CRIME_MARKER_GAP : COLUMN_GAP;
+
     const width = collapsed
       ? STRIP_WIDTH
-      : sectionItems.reduce((sum, slot) => sum + slotWidth(slot), 0) + (sectionItems.length - 1) * COLUMN_GAP;
+      : columns.reduce((sum, col, i) => sum + columnWidth(col) + (i < columns.length - 1 ? gapAfter(i) : 0), 0);
 
     sections.push({ key, label: hourLabel(key), startX, width, collapsed, evidenceCount: items.length, hasConflict });
 
@@ -276,7 +322,7 @@ export function computeCardLayout(
           x: startX,
           y,
           width: STRIP_WIDTH,
-          height: CARD_HEIGHT,
+          height: laneHeight.get(subjectId) ?? CARD_HEIGHT,
           count: subjectItems.length,
           hasConflict: subjectItems.some((e) => conflictEvidenceIds.has(e.id)),
           evidenceIds: subjectItems.map((e) => e.id),
@@ -290,20 +336,31 @@ export function computeCardLayout(
       });
     } else {
       let x = startX;
-      let cardIndex = 0;
-      sectionItems.forEach((slot) => {
-        if (slot.kind === "crime") {
-          setCrimeEdge(slot.crimeId, slot.edge, x + CRIME_MARKER_WIDTH / 2);
+      let columnIndex = 0;
+      columns.forEach((col, i) => {
+        if (col.kind === "crime") {
+          setCrimeEdge(col.slot.crimeId, col.slot.edge, x + CRIME_MARKER_WIDTH / 2);
         } else {
-          const e = slot.evidence;
-          const y = laneY.get(e.subjectId);
-          if (y !== undefined) {
-            positions.set(e.id, { id: e.id, x, y, column: cardIndex, laneIndex: laneIndexBySubject.get(e.subjectId) ?? 0 });
-            ticks.push({ x, label: formatEvidenceTimeLabel(e) });
-          }
-          cardIndex++;
+          const usedInLane = new Map<string, number>();
+          col.items.forEach((e) => {
+            const y = laneY.get(e.subjectId);
+            if (y === undefined) return;
+            const offset = usedInLane.get(e.subjectId) ?? 0;
+            usedInLane.set(e.subjectId, offset + 1);
+            positions.set(e.id, {
+              id: e.id,
+              x,
+              y: y + offset * STACK_STRIDE,
+              column: columnIndex,
+              laneIndex: laneIndexBySubject.get(e.subjectId) ?? 0,
+            });
+          });
+          // One tick per shared timestamp; an exact-time item gives the most precise label.
+          const tickSource = col.items.find((e) => e.timeCertainty === "exact") ?? col.items[0];
+          ticks.push({ x, label: formatEvidenceTimeLabel(tickSource) });
+          columnIndex++;
         }
-        x += slotWidth(slot) + COLUMN_GAP;
+        x += columnWidth(col) + gapAfter(i);
       });
     }
 
@@ -316,7 +373,7 @@ export function computeCardLayout(
   });
 
   const canvasWidth = Math.max(STRIP_WIDTH, cursorX - COLUMN_GAP + MARGIN.right);
-  const canvasHeight = Math.max(LANE_STRIDE, lanesTop + subjects.length * LANE_STRIDE + MARGIN.bottom - LANE_GAP);
+  const canvasHeight = Math.max(LANE_STRIDE, laneCursor - LANE_GAP + MARGIN.bottom);
   const collapsedSections = sections.filter((s) => s.collapsed);
 
   /** The point a connector should touch for this evidence: its own card edge if expanded, or its lane's collapsed-strip edge if not. */
@@ -329,7 +386,7 @@ export function computeCardLayout(
     if (!e || !sectionKey) return null;
     const chip = chips.find((c) => c.sectionKey === sectionKey && c.subjectId === e.subjectId);
     if (!chip) return null;
-    return { x: side === "left" ? chip.x : chip.x + chip.width, y: chip.y + chip.height / 2 };
+    return { x: side === "left" ? chip.x : chip.x + chip.width, y: chip.y + CARD_HEIGHT / 2 };
   }
 
   function anchorTopOrBottom(evidenceId: string, edge: "top" | "bottom"): { x: number; y: number } | null {
@@ -355,8 +412,10 @@ export function computeCardLayout(
         continue;
       }
 
-      const from = anchor(a.id, "right");
-      const to = anchor(b.id, "left");
+      // Same instant -> stacked in one column: a short vertical line between the two cards.
+      const stacked = positions.has(a.id) && positions.get(a.id)!.x === positions.get(b.id)?.x;
+      const from = stacked ? anchorTopOrBottom(a.id, "bottom") : anchor(a.id, "right");
+      const to = stacked ? anchorTopOrBottom(b.id, "top") : anchor(b.id, "left");
       if (!from || !to) continue;
 
       const conflict = analysis.conflicts.find(
@@ -371,7 +430,7 @@ export function computeCardLayout(
       if (conflict) {
         kind = "conflict";
         baseKey = `conflict-${conflict.id}`;
-        label = `needs ~${Math.round(conflict.requiredMinutes)} · has ~${Math.round(conflict.availableMinutes)}`;
+        label = conflictShortLabel(conflict);
       } else {
         const gap = analysis.gaps.find(
           (g) =>
@@ -382,15 +441,19 @@ export function computeCardLayout(
         if (gap) {
           kind = "gap";
           baseKey = `gap-${gap.id}`;
-          label = `${Math.round(gap.durationMinutes)} min unaccounted`;
+          label = gapShortLabel(gap);
         } else {
           kind = "sequence";
           baseKey = `seq-${a.id}-${b.id}`;
-          label = `${Math.round(minutesBetween(a.eventTime, b.eventTime))} min`;
+          const elapsed = formatDuration(minutesBetween(a.eventTime, b.eventTime));
+          const leg = (analysis.travelLegs ?? []).find(
+            (l) => l.evidenceIds.includes(a.id) && l.evidenceIds.includes(b.id)
+          );
+          label = leg ? `${elapsed} · ~${formatDuration(leg.travelMinutes)} travel` : elapsed;
         }
       }
 
-      const segments = splitAroundCollapsed(from, to, label, collapsedSections);
+      const segments = stacked ? [{ from, to, label }] : splitAroundCollapsed(from, to, label, collapsedSections);
       segments.forEach((seg, segIndex) => {
         connectors.push({
           key: segments.length > 1 ? `${baseKey}-seg${segIndex}` : baseKey,
@@ -436,7 +499,7 @@ export function computeCardLayout(
     });
   });
 
-  return { positions, chips, connectors, sections, ticks, canvasWidth, canvasHeight, crimeBands, laneY };
+  return { positions, chips, connectors, sections, ticks, canvasWidth, canvasHeight, crimeBands, laneY, laneHeight };
 }
 
 /** Which hour section a piece of evidence falls in — exported so the sidebar can expand the right hour before scrolling to it. */

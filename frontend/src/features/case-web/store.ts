@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { caseWebApi, type CaseUpdate, type CrimeInput, type SubjectInput } from "./api";
+import { caseWebApi, type CaseUpdate, type CrimeInput, type ProfilePictureInput, type SubjectInput } from "./api";
 import type { AiSuggestionStatus, CaseAnalysis, CaseSummary, Crime, Evidence, Reliability, Subject } from "./types";
 
 const EMPTY_ANALYSIS: CaseAnalysis = {
@@ -46,6 +46,8 @@ interface CaseWebState {
   addSubject: (input: SubjectInput) => Promise<Subject>;
   updateSubject: (id: string, input: Partial<SubjectInput>) => Promise<void>;
   removeSubject: (id: string) => Promise<void>;
+  setSubjectPhoto: (id: string, input: ProfilePictureInput) => Promise<void>;
+  removeSubjectPhoto: (id: string) => Promise<void>;
   addEvidence: (input: EvidenceInput) => Promise<void>;
   updateEvidence: (id: string, input: EvidenceInput) => Promise<void>;
   setReliability: (id: string, reliability: Reliability) => Promise<void>;
@@ -231,6 +233,20 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
       set((state) => ({ subjects: state.subjects.map((s) => (s.id === id ? updated : s)) }));
     },
 
+    setSubjectPhoto: async (id, input) => {
+      const updated = await persist("Couldn't save profile picture", () =>
+        caseWebApi.setSubjectPhoto(get().selectedCaseId, id, input)
+      );
+      set((state) => ({ subjects: state.subjects.map((s) => (s.id === id ? updated : s)) }));
+    },
+
+    removeSubjectPhoto: async (id) => {
+      const updated = await persist("Couldn't remove profile picture", () =>
+        caseWebApi.removeSubjectPhoto(get().selectedCaseId, id)
+      );
+      set((state) => ({ subjects: state.subjects.map((s) => (s.id === id ? updated : s)) }));
+    },
+
     removeSubject: async (id) => {
       await persist("Couldn't delete subject", () => caseWebApi.removeSubject(get().selectedCaseId, id));
       // The subject's evidence went with it, so drop those cards, unlink it elsewhere, and refresh the analysis.
@@ -264,7 +280,9 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
       const updated = await persist("Couldn't update evidence", () =>
             caseWebApi.updateEvidence(get().selectedCaseId, id, input)
           );
-      set((state) => ({ evidence: state.evidence.map((e) => (e.id === id ? updated : e)) }));
+      // Time, place or people may have changed, so conflicts and gaps need recomputing.
+      const analysis = await persist("Couldn't refresh analysis", () => caseWebApi.getAnalysis(get().selectedCaseId));
+      set((state) => ({ evidence: state.evidence.map((e) => (e.id === id ? updated : e)), analysis }));
     },
 
     setReliability: async (id, reliability) => {

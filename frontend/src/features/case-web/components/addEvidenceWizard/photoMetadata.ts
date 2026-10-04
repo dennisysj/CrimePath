@@ -8,7 +8,7 @@ export const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 
 let attachmentSeq = 1;
 
-function readFileAsDataUrl(file: File): Promise<string> {
+export function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);

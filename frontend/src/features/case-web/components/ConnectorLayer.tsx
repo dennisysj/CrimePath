@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import type { ConnectorKind, ConnectorSpec } from "./cardLayout";
+import { CARD_WIDTH, type ConnectorKind, type ConnectorSpec } from "./cardLayout";
 import { STATUS_COLORS } from "./statusColors";
 
 interface ConnectorLayerProps {
@@ -26,6 +26,39 @@ function chipWidth(label: string) {
   return label.length * CHAR_WIDTH + 10;
 }
 
+/** Line height (px) of a same-lane label chip. */
+const LABEL_LINE_HEIGHT = 14;
+
+/** A label's lines: one if it fits the segment, else split at " · " (e.g. "needs ~33 min" / "has ~0 min"). */
+function labelLines(label: string, segmentLength: number): string[] {
+  if (chipWidth(label) <= segmentLength) return [label];
+  return label.split(" · ");
+}
+
+/**
+ * Where a same-lane connector's label chip goes. Horizontal/diagonal lines
+ * (time passing) carry it above their midpoint; a vertical line between two
+ * cards stacked at one instant carries it centered on the line, with a card's
+ * width of room.
+ */
+function sameLaneChip(c: ConnectorSpec) {
+  const vertical = c.from.x === c.to.x;
+  const room = vertical ? CARD_WIDTH : Math.abs(c.to.x - c.from.x);
+  const lines = labelLines(c.label, room);
+  const w = Math.max(...lines.map(chipWidth));
+  const h = lines.length * LABEL_LINE_HEIGHT;
+  const midX = (c.from.x + c.to.x) / 2;
+  const midY = (c.from.y + c.to.y) / 2;
+  return {
+    lines,
+    w,
+    h,
+    midX,
+    top: vertical ? midY - h / 2 : midY - 7 - h,
+    show: c.label.length > 0 && w <= room && (vertical || room >= MIN_LABEL_LENGTH),
+  };
+}
+
 /** Two chip rects (midX/midY plus half-width/half-height) overlap if their extents intersect on both axes. */
 function rectsOverlap(
   a: { midX: number; midY: number; halfW: number; halfH: number },
@@ -43,13 +76,10 @@ export function ConnectorLayer({ width, height, connectors, highlightedKeys, has
   // chips can be suppressed — in favor of their tooltip — when they'd overlap one of these. Gap/conflict
   // labels always win the collision, per "keep the gap/conflict label and move the link label into the tooltip."
   const priorityChipRects = connectors
-    .filter((c) => c.kind !== "link" && c.label.length > 0 && Math.abs(c.to.x - c.from.x) >= MIN_LABEL_LENGTH)
-    .map((c) => ({
-      midX: (c.from.x + c.to.x) / 2,
-      midY: c.from.y - 14,
-      halfW: chipWidth(c.label) / 2,
-      halfH: 7,
-    }));
+    .filter((c) => c.kind !== "link")
+    .map(sameLaneChip)
+    .filter((chip) => chip.show)
+    .map((chip) => ({ midX: chip.midX, midY: chip.top + chip.h / 2, halfW: chip.w / 2, halfH: chip.h / 2 }));
 
   return (
     <svg width={width} height={height} className="pointer-events-none absolute left-0 top-0">
@@ -65,10 +95,7 @@ export function ConnectorLayer({ width, height, connectors, highlightedKeys, has
           const isNewConflictDraw = c.kind === "conflict";
 
           if (c.kind !== "link") {
-            const midX = (c.from.x + c.to.x) / 2;
-            const segmentLength = Math.abs(c.to.x - c.from.x);
-            const showChip = c.label.length > 0 && segmentLength >= MIN_LABEL_LENGTH;
-            const w = chipWidth(c.label);
+            const { lines, w, h: chipHeight, midX, top, show: showChip } = sameLaneChip(c);
 
             return (
               <motion.g key={c.key} initial={{ opacity: 0 }} animate={{ opacity: targetOpacity }} exit={{ opacity: 0 }} transition={{ duration: reduceMotion ? 0 : 0.15 }}>
@@ -83,11 +110,20 @@ export function ConnectorLayer({ width, height, connectors, highlightedKeys, has
                   {c.label && <title>{c.label}</title>}
                 </motion.line>
                 {showChip && (
-                  <motion.g animate={{ x: midX, y: c.from.y - 14 }} transition={spring}>
-                    <rect x={-w / 2} y={-8} width={w} height={14} rx={4} style={{ fill: "var(--bg)" }} />
-                    <text textAnchor="middle" y={2.5} fontSize={10} fill={labelColor} className="select-none font-mono">
-                      {c.label}
-                    </text>
+                  <motion.g animate={{ x: midX, y: top }} transition={spring}>
+                    <rect x={-w / 2} y={0} width={w} height={chipHeight} rx={4} style={{ fill: "var(--bg)" }} />
+                    {lines.map((line, i) => (
+                      <text
+                        key={i}
+                        textAnchor="middle"
+                        y={i * LABEL_LINE_HEIGHT + 10.5}
+                        fontSize={10}
+                        fill={labelColor}
+                        className="select-none font-mono"
+                      >
+                        {line}
+                      </text>
+                    ))}
                   </motion.g>
                 )}
               </motion.g>

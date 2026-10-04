@@ -1,7 +1,9 @@
-import { useState } from "react";
-import { Loader2, Trash2, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { Camera, Loader2, Trash2, X } from "lucide-react";
 import type { Evidence, Subject, SubjectKind } from "../types";
-import type { SubjectInput } from "../api";
+import type { ProfilePictureInput, SubjectInput } from "../api";
+import { SubjectAvatar } from "./SubjectAvatar";
+import { MAX_ATTACHMENT_BYTES, readFileAsDataUrl } from "./addEvidenceWizard/photoMetadata";
 
 interface ManageSubjectsModalProps {
   subjects: Subject[];
@@ -10,16 +12,11 @@ interface ManageSubjectsModalProps {
   onAdd: (input: SubjectInput) => Promise<Subject>;
   onUpdate: (id: string, input: Partial<SubjectInput>) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
+  onSetPhoto: (id: string, input: ProfilePictureInput) => Promise<void>;
+  onRemovePhoto: (id: string) => Promise<void>;
 }
 
 const SUBJECT_KINDS: SubjectKind[] = ["person", "vehicle", "phone", "other"];
-
-const SUBJECT_COLOR: Record<SubjectKind, string> = {
-  person: "#38bdf8",
-  phone: "#a78bfa",
-  vehicle: "#fbbf24",
-  other: "#94a3b8",
-};
 
 const inputClass =
   "w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-sm text-neutral-100 placeholder:text-neutral-600 focus:border-sky-500 focus:outline-none";
@@ -35,6 +32,8 @@ export function ManageSubjectsModal({
   onAdd,
   onUpdate,
   onRemove,
+  onSetPhoto,
+  onRemovePhoto,
 }: ManageSubjectsModalProps) {
   const [newName, setNewName] = useState("");
   const [newKind, setNewKind] = useState<SubjectKind>("person");
@@ -89,10 +88,13 @@ export function ManageSubjectsModal({
             <SubjectRow
               key={s.id}
               subject={s}
+              subjects={subjects}
               count={evidenceCount.get(s.id) ?? 0}
               involvedIn={involvedCount.get(s.id) ?? 0}
               onUpdate={onUpdate}
               onRemove={onRemove}
+              onSetPhoto={onSetPhoto}
+              onRemovePhoto={onRemovePhoto}
               onError={setError}
             />
           ))}
@@ -142,20 +144,27 @@ export function ManageSubjectsModal({
 
 function SubjectRow({
   subject,
+  subjects,
   count,
   involvedIn,
   onUpdate,
   onRemove,
+  onSetPhoto,
+  onRemovePhoto,
   onError,
 }: {
   subject: Subject;
+  subjects: Subject[];
   count: number;
   /** Other subjects' items this subject is only "also involved" in. */
   involvedIn: number;
   onUpdate: (id: string, input: Partial<SubjectInput>) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
+  onSetPhoto: (id: string, input: ProfilePictureInput) => Promise<void>;
+  onRemovePhoto: (id: string) => Promise<void>;
   onError: (message: string) => void;
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(subject.name);
   const [kind, setKind] = useState<SubjectKind>(subject.kind);
   const [busy, setBusy] = useState(false);
@@ -180,9 +189,50 @@ function SubjectRow({
     }
   }
 
+  async function handlePhotoPicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      onError("Profile picture must be an image file.");
+      return;
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      onError(`Profile picture must be under ${Math.round(MAX_ATTACHMENT_BYTES / (1024 * 1024))} MB.`);
+      return;
+    }
+    await run(async () => onSetPhoto(subject.id, { fileName: file.name, dataUrl: await readFileAsDataUrl(file) }), "Couldn't save profile picture.");
+  }
+
   return (
     <li className="flex items-center gap-2 rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5">
-      <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ backgroundColor: SUBJECT_COLOR[kind] }} />
+      <div className="group relative flex-shrink-0">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => fileInputRef.current?.click()}
+          title={subject.photoUrl ? "Change profile picture" : "Add profile picture"}
+          aria-label={subject.photoUrl ? "Change profile picture" : "Add profile picture"}
+          className="relative block rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+        >
+          <SubjectAvatar subject={subject} subjects={subjects} size={32} />
+          <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100">
+            <Camera size={13} />
+          </span>
+        </button>
+        {subject.photoUrl && !busy && (
+          <button
+            type="button"
+            onClick={() => run(() => onRemovePhoto(subject.id), "Couldn't remove profile picture.")}
+            title="Remove profile picture"
+            aria-label="Remove profile picture"
+            className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-neutral-700 text-neutral-200 hover:bg-red-600 group-hover:flex"
+          >
+            <X size={10} />
+          </button>
+        )}
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoPicked} />
+      </div>
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}

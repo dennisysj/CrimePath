@@ -68,6 +68,8 @@ CREATE TABLE IF NOT EXISTS case_subjects (
     subject_type TEXT,
     description TEXT,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- "src/profile_pictures/<file name>" (or an absolute image URL); NULL shows the name's initial
+    profile_file_url TEXT,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

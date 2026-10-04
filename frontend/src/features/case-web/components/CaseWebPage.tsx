@@ -149,6 +149,8 @@ export function CaseWebPage() {
     addSubject,
     updateSubject,
     removeSubject,
+    setSubjectPhoto,
+    removeSubjectPhoto,
     addEvidence,
     updateEvidence,
     setReliability,
@@ -532,6 +534,8 @@ export function CaseWebPage() {
           onAdd={addSubject}
           onUpdate={updateSubject}
           onRemove={removeSubject}
+          onSetPhoto={setSubjectPhoto}
+          onRemovePhoto={removeSubjectPhoto}
         />
       )}
 

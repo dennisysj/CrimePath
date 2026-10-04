@@ -1,6 +1,6 @@
 import cors from "cors";
 import express from "express";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ import type { HealthResponse } from "@crimepath/shared";
 import { ExtractEvidenceRequestSchema } from "@crimepath/shared";
 import { assertDatabaseConfigured, pool } from "./db.js";
 import { extractImageMetadata, extractImageMetadataFromBuffer } from "./services/extractImageMetadata.js";
+import { computeCaseAnalysis } from "./services/conflictEngine.js";
 import { extractCrimeFromText, extractEvidenceFromText } from "./services/gemini.js";
 
 const app = express();
@@ -424,24 +425,63 @@ const IMAGES_DIR =
   ) ?? path.resolve(serverDir, "images");
 const IMAGES_URL_PREFIX = "src/images/";
 
-/** A safe, unused file name in IMAGES_DIR for an upload called `original`. */
-function availableFileName(original: string): string {
+/** Subject profile pictures; case_subjects.profile_file_url stores "src/profile_pictures/<file name>". */
+const PROFILE_PICTURES_DIR =
+  [path.resolve(serverDir, "profile_pictures"), path.resolve(serverDir, "../../src/profile_pictures")].find(
+    (candidate) => existsSync(candidate)
+  ) ?? path.resolve(serverDir, "profile_pictures");
+const PROFILE_PICTURES_URL_PREFIX = "src/profile_pictures/";
+
+/** A safe, unused file name in `dir` for an upload called `original`. */
+function availableFileName(original: string, dir = IMAGES_DIR): string {
   const parsed = path.parse(path.basename(original));
   const base = parsed.name.replace(/[^\w.\- ]+/g, "_").trim() || "upload";
   const ext = parsed.ext.replace(/[^\w.]+/g, "");
   for (let n = 0; ; n++) {
     const candidate = n === 0 ? `${base}${ext}` : `${base}-${n}${ext}`;
-    if (!existsSync(path.join(IMAGES_DIR, candidate))) return candidate;
+    if (!existsSync(path.join(dir, candidate))) return candidate;
   }
 }
 
-/** Write an uploaded data: URL into IMAGES_DIR; returns the stored file name. */
-async function saveUpload(originalName: string, dataUrl: string): Promise<string> {
-  await mkdir(IMAGES_DIR, { recursive: true });
-  const stored = availableFileName(originalName);
-  await writeFile(path.join(IMAGES_DIR, stored), dataUrlToBuffer(dataUrl));
+/** Write an uploaded data: URL into `dir` (IMAGES_DIR by default); returns the stored file name. */
+async function saveUpload(originalName: string, dataUrl: string, dir = IMAGES_DIR): Promise<string> {
+  await mkdir(dir, { recursive: true });
+  const stored = availableFileName(originalName, dir);
+  await writeFile(path.join(dir, stored), dataUrlToBuffer(dataUrl));
   return stored;
 }
+
+/** Browser URL for a stored profile_file_url: files in src/profile_pictures are served by this API; absolute URLs pass through. */
+function profilePictureUrl(fileUrl: string | null, origin: string): string | null {
+  if (!fileUrl) return null;
+  if (fileUrl.startsWith(PROFILE_PICTURES_URL_PREFIX)) {
+    const name = path.basename(fileUrl.slice(PROFILE_PICTURES_URL_PREFIX.length));
+    return `${origin}/api/profile-pictures/${encodeURIComponent(name)}`;
+  }
+  return /^https?:\/\//i.test(fileUrl) ? fileUrl : null;
+}
+
+/** Delete a profile picture file this API stored; other references (external URLs) are left alone. */
+async function deleteProfilePictureFile(fileUrl: string | null) {
+  if (!fileUrl?.startsWith(PROFILE_PICTURES_URL_PREFIX)) return;
+  const name = path.basename(fileUrl.slice(PROFILE_PICTURES_URL_PREFIX.length));
+  await unlink(path.join(PROFILE_PICTURES_DIR, name)).catch(() => undefined);
+}
+
+function subjectResponse(
+  row: { id: string; name: string | null; type: string | null; profile_file_url: string | null },
+  origin: string
+) {
+  return {
+    id: row.id,
+    name: row.name ?? row.id,
+    kind: kindFromSubjectType(row.type),
+    photoUrl: profilePictureUrl(row.profile_file_url, origin),
+  };
+}
+
+const SUBJECT_COLUMNS =
+  "subject_id AS id, subject_name AS name, subject_type AS type, profile_file_url";
 
 /** "…/api/images/<name>" or "src/images/<name>" -> "<name>" if that file exists in IMAGES_DIR. */
 function storedFileName(reference: string): string | null {
@@ -964,40 +1004,17 @@ function findSeededEvidence(items: ApiEvidenceItem[], subjectId: string, source:
   );
 }
 
-function buildSeededCaseAnalysis(items: ApiEvidenceItem[]) {
+/**
+ * Sample-case narrative insights that no engine computes yet. Conflicts and
+ * gaps are NOT here: those come from computeCaseAnalysis for every case.
+ */
+function buildSeededCaseInsights(items: ApiEvidenceItem[]) {
   const metrotownTransaction = findSeededEvidence(items, "PER-001", "Transaction", "Metrotown", "2026-10-03T09:20:31Z");
   const brentwoodCctv = findSeededEvidence(items, "PER-001", "CCTV cam 12", "Brentwood Town Centre", "2026-10-03T10:00:04Z");
-  const commercialWitness = findSeededEvidence(items, "PER-001", "Witness #2", "Commercial-Broadway Station", "2026-10-03T10:12:00Z");
   const metrotownWitness = findSeededEvidence(items, "PER-001", "Witness #1", "Metrotown", "2026-10-03T09:00:00Z");
   const personBPhone = findSeededEvidence(items, "PER-002", "Phone record", "Edmonds Station", "2026-10-03T08:55:12Z");
 
   return {
-    conflicts:
-      brentwoodCctv && commercialWitness
-        ? [
-            {
-              id: "conflict-brentwood-commercial",
-              evidenceIds: [brentwoodCctv.id, commercialWitness.id] as [string, string],
-              requiredMinutes: 24.2,
-              availableMinutes: 11.9,
-              resolvedByUncertainty: false,
-              explanation:
-                "Evidence places Person A at Brentwood Town Centre at 2026-10-03 10:00:04 and near Commercial-Broadway Station about 12 minutes later. The estimated travel time between these locations is about 24 minutes, so these two accounts may be inconsistent if their reported times and locations are accurate.",
-            },
-          ]
-        : [],
-    gaps:
-      metrotownTransaction && brentwoodCctv
-        ? [
-            {
-              id: "gap-person-a-metrotown-brentwood",
-              subjectId: "PER-001",
-              start: metrotownTransaction.eventTime,
-              end: brentwoodCctv.eventTime,
-              durationMinutes: 39.55,
-            },
-          ]
-        : [],
     corroborations:
       metrotownTransaction && personBPhone
         ? [
@@ -1061,6 +1078,7 @@ const PRE_SCHEMA_SQL = `
       ALTER TABLE case_subjects ADD COLUMN IF NOT EXISTS description TEXT;
       ALTER TABLE case_subjects ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
       ALTER TABLE case_subjects ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+      ALTER TABLE case_subjects ADD COLUMN IF NOT EXISTS profile_file_url TEXT;
     END IF;
 
     -- An evidence_attachments table from an earlier CrimePath version
@@ -1560,16 +1578,17 @@ app.delete("/api/cases/:caseId", async (req, res) => {
 app.get("/api/cases/:caseId/subjects", async (req, res) => {
   try {
     assertDatabaseConfigured();
-    const result = await pool.query<{ id: string; name: string | null; type: string | null }>(
+    const result = await pool.query<Parameters<typeof subjectResponse>[0]>(
       `
-        SELECT subject_id AS id, subject_name AS name, subject_type AS type
+        SELECT ${SUBJECT_COLUMNS}
         FROM case_subjects
         WHERE case_id = $1
         ORDER BY created_at ASC, subject_id ASC
       `,
       [req.params.caseId]
     );
-    res.json(result.rows.map((r) => ({ id: r.id, name: r.name ?? r.id, kind: kindFromSubjectType(r.type) })));
+    const origin = originOf(req);
+    res.json(result.rows.map((r) => subjectResponse(r, origin)));
   } catch (error) {
     sendError(res, error, "Failed to load subjects");
   }
@@ -1599,7 +1618,7 @@ app.post("/api/cases/:caseId/subjects", async (req, res) => {
         "INSERT INTO case_subjects (case_id, subject_id, subject_name, subject_type) VALUES ($1, $2, $3, $4)",
         [req.params.caseId, id, parsed.data.name, SUBJECT_TYPE_BY_KIND[parsed.data.kind]]
       );
-      return { id, name: parsed.data.name, kind: parsed.data.kind };
+      return { id, name: parsed.data.name, kind: parsed.data.kind, photoUrl: null };
     });
     res.status(201).json(created);
   } catch (error) {
@@ -1647,11 +1666,72 @@ app.patch("/api/cases/:caseId/subjects/:subjectId", async (req, res) => {
         `,
         [caseId, subjectId, name, ROLE_BY_KIND[kind], [...KIND_ROLES]]
       );
-      return { id: subjectId, name, kind };
+      const row = await client.query<{ profile_file_url: string | null }>(
+        "SELECT profile_file_url FROM case_subjects WHERE case_id = $1 AND subject_id = $2",
+        [caseId, subjectId]
+      );
+      return { id: subjectId, name, kind, photoUrl: profilePictureUrl(row.rows[0]?.profile_file_url ?? null, originOf(req)) };
     });
     res.json(updated);
   } catch (error) {
     sendError(res, error, "Failed to update subject");
+  }
+});
+
+/** Subject profile pictures saved in src/profile_pictures. */
+app.use("/api/profile-pictures", express.static(PROFILE_PICTURES_DIR, { index: false, dotfiles: "deny" }));
+
+const ProfilePictureSchema = z.object({
+  fileName: z.string().min(1),
+  dataUrl: z.string().regex(/^data:image\/[\w.+-]+;base64,/, "Profile picture must be an image"),
+});
+
+/** Set or replace a subject's profile picture; the previous file is deleted. */
+app.put("/api/cases/:caseId/subjects/:subjectId/profile-picture", async (req, res) => {
+  const parsed = ProfilePictureSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid profile picture", issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  const { caseId, subjectId } = req.params;
+  try {
+    assertDatabaseConfigured();
+    const current = await pool.query<{ profile_file_url: string | null }>(
+      "SELECT profile_file_url FROM case_subjects WHERE case_id = $1 AND subject_id = $2",
+      [caseId, subjectId]
+    );
+    if (current.rowCount === 0) throw new HttpError(404, "Subject not found");
+
+    const stored = await saveUpload(parsed.data.fileName, parsed.data.dataUrl, PROFILE_PICTURES_DIR);
+    const result = await pool.query<Parameters<typeof subjectResponse>[0]>(
+      `UPDATE case_subjects SET profile_file_url = $3 WHERE case_id = $1 AND subject_id = $2 RETURNING ${SUBJECT_COLUMNS}`,
+      [caseId, subjectId, `${PROFILE_PICTURES_URL_PREFIX}${stored}`]
+    );
+    await deleteProfilePictureFile(current.rows[0].profile_file_url);
+    res.json(subjectResponse(result.rows[0], originOf(req)));
+  } catch (error) {
+    sendError(res, error, "Failed to save profile picture");
+  }
+});
+
+/** Remove a subject's profile picture (the UI falls back to the name's initial). */
+app.delete("/api/cases/:caseId/subjects/:subjectId/profile-picture", async (req, res) => {
+  const { caseId, subjectId } = req.params;
+  try {
+    assertDatabaseConfigured();
+    const current = await pool.query<{ profile_file_url: string | null }>(
+      "SELECT profile_file_url FROM case_subjects WHERE case_id = $1 AND subject_id = $2",
+      [caseId, subjectId]
+    );
+    if (current.rowCount === 0) throw new HttpError(404, "Subject not found");
+    const result = await pool.query<Parameters<typeof subjectResponse>[0]>(
+      `UPDATE case_subjects SET profile_file_url = NULL WHERE case_id = $1 AND subject_id = $2 RETURNING ${SUBJECT_COLUMNS}`,
+      [caseId, subjectId]
+    );
+    await deleteProfilePictureFile(current.rows[0].profile_file_url);
+    res.json(subjectResponse(result.rows[0], originOf(req)));
+  } catch (error) {
+    sendError(res, error, "Failed to remove profile picture");
   }
 });
 
@@ -1661,7 +1741,7 @@ app.delete("/api/cases/:caseId/subjects/:subjectId", async (req, res) => {
     // Deleting a subject takes its evidence with it: items it is the primary
     // subject of (the card in its lane) are deleted, and it is unlinked from
     // items where it was only an involved party.
-    await withTransaction(async (client) => {
+    const removedPicture = await withTransaction(async (client) => {
       const owned = await client.query<{ event_id: string }>(
         `
           SELECT es.event_id::text AS event_id
@@ -1681,12 +1761,14 @@ app.delete("/api/cases/:caseId/subjects/:subjectId", async (req, res) => {
         `,
         [caseId, subjectId]
       );
-      const result = await client.query("DELETE FROM case_subjects WHERE case_id = $1 AND subject_id = $2", [
-        caseId,
-        subjectId,
-      ]);
+      const result = await client.query<{ profile_file_url: string | null }>(
+        "DELETE FROM case_subjects WHERE case_id = $1 AND subject_id = $2 RETURNING profile_file_url",
+        [caseId, subjectId]
+      );
       if (result.rowCount === 0) throw new HttpError(404, "Subject not found");
+      return result.rows[0].profile_file_url;
     });
+    await deleteProfilePictureFile(removedPicture);
     res.status(204).end();
   } catch (error) {
     sendError(res, error, "Failed to delete subject");
@@ -2001,12 +2083,21 @@ app.delete("/api/cases/:caseId/crimes/:crimeId", async (req, res) => {
 app.get("/api/cases/:caseId/analysis", async (req, res) => {
   try {
     assertDatabaseConfigured();
-    const items = await loadCaseItems(req.params.caseId, originOf(req));
-    if (req.params.caseId === "1") {
-      res.json(buildSeededCaseAnalysis(items));
-      return;
-    }
-    res.json({ conflicts: [], gaps: [], corroborations: [], aiSuggestions: [] });
+    const [items, subjects] = await Promise.all([
+      loadCaseItems(req.params.caseId, originOf(req)),
+      pool.query<{ id: string; name: string | null }>(
+        "SELECT subject_id AS id, subject_name AS name FROM case_subjects WHERE case_id = $1",
+        [req.params.caseId]
+      ),
+    ]);
+    const { conflicts, gaps, travelLegs } = await computeCaseAnalysis(
+      req.params.caseId,
+      items,
+      subjects.rows.map((s) => ({ id: s.id, name: s.name ?? s.id }))
+    );
+    const insights =
+      req.params.caseId === "1" ? buildSeededCaseInsights(items) : { corroborations: [], aiSuggestions: [] };
+    res.json({ conflicts, gaps, travelLegs, ...insights });
   } catch (error) {
     sendError(res, error, "Failed to load analysis");
   }
@@ -2142,8 +2233,6 @@ app.get("/api/cases/:caseId/history", async (req, res) => {
     sendError(res, error, "Failed to load history");
   }
 });
-
-// TODO (Phase 3): conflict engine + travel/gemini services.
 
 // Express 4 doesn't catch rejected async handlers; log instead of crashing.
 process.on("unhandledRejection", (error) => {

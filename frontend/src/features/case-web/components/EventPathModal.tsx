@@ -20,6 +20,7 @@ import { buildGoogleMapsRouteUrl } from "../../../utils/googleMaps";
 import { EVIDENCE_TYPE_LABEL, MIN_ROUTE_POINTS, getRoutePoints } from "../locationUtils";
 import { formatDateTime } from "../timeUtils";
 import type { CaseAnalysis, Evidence, Subject } from "../types";
+import { conflictShortLabel } from "../types";
 import { subjectColorFor } from "./subjectColors";
 import { STATUS_COLORS } from "./statusColors";
 
@@ -334,7 +335,7 @@ function PathLayer({
           >
             {conflict && (
               <Tooltip sticky className="event-sequence-tooltip">
-                needs ~{Math.round(conflict.requiredMinutes)} · has ~{Math.round(conflict.availableMinutes)}
+                {conflictShortLabel(conflict)}
               </Tooltip>
             )}
           </Polyline>
