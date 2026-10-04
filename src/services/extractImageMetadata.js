@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import exifr from "exifr";
 import sharp from "sharp";
@@ -12,6 +12,22 @@ const MIME_BY_FORMAT = {
   heif: "image/heif",
   avif: "image/avif",
 };
+
+/**
+ * @typedef {{
+ *   fileName: string,
+ *   fileType: string | null,
+ *   fileSize: number,
+ *   width: number | null,
+ *   height: number | null,
+ *   capturedAt: string | null,
+ *   latitude: number | null,
+ *   longitude: number | null,
+ *   cameraMake: string | null,
+ *   cameraModel: string | null,
+ *   software: string | null
+ * }} ImageMetadata
+ */
 
 // EXIF stores local camera time as "2026:10:03 14:31:22".
 // Keep those clock values. Do not convert them to UTC.
@@ -65,19 +81,7 @@ function positiveInteger(value) {
  * Any field that is missing, unreadable, or invalid is null.
  *
  * @param {string} filePath
- * @returns {Promise<{
- *   fileName: string,
- *   fileType: string | null,
- *   fileSize: number,
- *   width: number | null,
- *   height: number | null,
- *   capturedAt: string | null,
- *   latitude: number | null,
- *   longitude: number | null,
- *   cameraMake: string | null,
- *   cameraModel: string | null,
- *   software: string | null
- * }>}
+ * @returns {Promise<ImageMetadata>}
  */
 export async function extractImageMetadata(filePath) {
   if (typeof filePath !== "string" || filePath.trim() === "") {
@@ -98,10 +102,28 @@ export async function extractImageMetadata(filePath) {
     throw new Error(`Not a file: ${filePath}`);
   }
 
+  // Read into memory first so sharp never holds a handle on the file
+  // (on Windows that handle blocks the caller from deleting it).
+  return extractImageMetadataFromBuffer(await readFile(filePath), path.basename(filePath));
+}
+
+/**
+ * Read metadata from in-memory image bytes (e.g. an upload).
+ * Any field that is missing, unreadable, or invalid is null.
+ *
+ * @param {Buffer} buffer
+ * @param {string} fileName
+ * @returns {Promise<ImageMetadata>}
+ */
+export async function extractImageMetadataFromBuffer(buffer, fileName) {
+  if (!Buffer.isBuffer(buffer)) {
+    throw new Error("extractImageMetadataFromBuffer requires a Buffer.");
+  }
+
   const metadata = {
-    fileName: path.basename(filePath),
+    fileName,
     fileType: null,
-    fileSize: fileStats.size,
+    fileSize: buffer.length,
     width: null,
     height: null,
     capturedAt: null,
@@ -113,7 +135,7 @@ export async function extractImageMetadata(filePath) {
   };
 
   try {
-    const image = await sharp(filePath, { failOn: "none" }).metadata();
+    const image = await sharp(buffer, { failOn: "none" }).metadata();
     metadata.fileType = MIME_BY_FORMAT[image.format] ?? null;
     metadata.width = positiveInteger(image.width);
     metadata.height = positiveInteger(image.height);
@@ -123,13 +145,16 @@ export async function extractImageMetadata(filePath) {
 
   try {
     // reviveValues stays off so dates remain the original EXIF strings.
-    const exif = await exifr.parse(filePath, {
-      pick: ["DateTimeOriginal", "Make", "Model", "Software"],
+    const exif = await exifr.parse(buffer, {
+      pick: ["DateTimeOriginal", "CreateDate", "DateTime", "Make", "Model", "Software"],
       reviveValues: false,
     });
 
     if (exif) {
-      metadata.capturedAt = formatCapturedAt(exif.DateTimeOriginal);
+      metadata.capturedAt =
+        formatCapturedAt(exif.DateTimeOriginal) ??
+        formatCapturedAt(exif.CreateDate) ??
+        formatCapturedAt(exif.DateTime);
       metadata.cameraMake = cleanString(exif.Make);
       metadata.cameraModel = cleanString(exif.Model);
       metadata.software = cleanString(exif.Software);
@@ -139,7 +164,7 @@ export async function extractImageMetadata(filePath) {
   }
 
   try {
-    const gps = await exifr.gps(filePath);
+    const gps = await exifr.gps(buffer);
     if (gps) {
       metadata.latitude = cleanCoordinate(gps.latitude, -90, 90);
       metadata.longitude = cleanCoordinate(gps.longitude, -180, 180);

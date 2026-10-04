@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { FileText, Paperclip } from "lucide-react";
+import { FileText, Paperclip, Pencil, Trash2 } from "lucide-react";
 import type { AiSuggestion, CaseAnalysis, Evidence, Subject } from "../types";
 import type { Selection } from "../store";
 import { formatClock, formatClockWithSeconds } from "../timeUtils";
@@ -11,6 +11,8 @@ interface DetailsPanelProps {
   analysis: CaseAnalysis;
   selection: Selection;
   onSelectEvidence: (id: string) => void;
+  onEditEvidence: (evidence: Evidence) => void;
+  onRemoveEvidence: (id: string) => void;
   onConfirmSuggestion: (id: string) => void;
   onDismissSuggestion: (id: string) => void;
 }
@@ -39,6 +41,8 @@ export function DetailsPanel({
   analysis,
   selection,
   onSelectEvidence,
+  onEditEvidence,
+  onRemoveEvidence,
   onConfirmSuggestion,
   onDismissSuggestion,
 }: DetailsPanelProps) {
@@ -70,7 +74,27 @@ export function DetailsPanel({
     <div className="thin-scrollbar flex h-full flex-col overflow-y-auto">
       {selectedEvidence && (
         <section className="border-b border-neutral-800 p-4">
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">Selected Evidence</h2>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Selected Evidence</h2>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => onEditEvidence(selectedEvidence)}
+                className="inline-flex items-center gap-1 rounded border border-neutral-700 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-neutral-500 hover:text-white"
+              >
+                <Pencil size={11} /> Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm("Remove this evidence? This can't be undone.")) onRemoveEvidence(selectedEvidence.id);
+                }}
+                className="inline-flex items-center gap-1 rounded border border-neutral-700 px-2 py-0.5 text-[11px] text-neutral-400 hover:border-red-500/60 hover:text-red-400"
+              >
+                <Trash2 size={11} /> Delete
+              </button>
+            </div>
+          </div>
           <p className="mb-2 text-sm font-medium text-neutral-100">{selectedEvidence.event}</p>
           <dl className="space-y-1 font-mono text-xs">
             <Row label="Subject" value={subjectById.get(selectedEvidence.subjectId)?.name ?? "Unknown"} />

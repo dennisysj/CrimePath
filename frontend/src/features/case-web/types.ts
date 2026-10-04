@@ -10,6 +10,13 @@ export interface Subject {
   kind: SubjectKind;
 }
 
+export interface CaseSummary {
+  id: string;
+  name: string;
+  description?: string;
+  status?: string;
+}
+
 export type EvidenceType =
   | "witness"
   | "cctv"

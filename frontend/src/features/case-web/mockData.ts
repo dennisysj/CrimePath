@@ -15,7 +15,7 @@ import type { AiSuggestion, Conflict, Corroboration, Evidence, Gap, Subject } fr
  * See check-caseweb-math.ts (scratch, not checked in) for the arithmetic.
  */
 
-export const caseName = "Metrotown Incident – Oct 3";
+export const caseName = "sample case";
 
 export const subjects: Subject[] = [
   { id: "person-a", name: "Person A", kind: "person" },

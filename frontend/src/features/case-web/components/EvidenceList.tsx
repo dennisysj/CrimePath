@@ -1,4 +1,4 @@
-import { Paperclip, Trash2 } from "lucide-react";
+import { Paperclip, Plus, Trash2 } from "lucide-react";
 import type { Evidence, Subject } from "../types";
 import type { Selection } from "../store";
 import { formatClock } from "../timeUtils";
@@ -10,6 +10,7 @@ interface EvidenceListProps {
   onSelectSubject: (id: string) => void;
   onSelectEvidence: (id: string) => void;
   onRemoveEvidence: (id: string) => void;
+  onManageSubjects: () => void;
 }
 
 const SUBJECT_COLOR: Record<Subject["kind"], string> = {
@@ -39,6 +40,7 @@ export function EvidenceList({
   onSelectSubject,
   onSelectEvidence,
   onRemoveEvidence,
+  onManageSubjects,
 }: EvidenceListProps) {
   const subjectById = new Map(subjects.map((s) => [s.id, s]));
   const sorted = [...evidence].sort((a, b) => new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime());
@@ -63,6 +65,15 @@ export function EvidenceList({
             </button>
           );
         })}
+        <button
+          type="button"
+          onClick={onManageSubjects}
+          title="Add or manage subjects"
+          className="flex items-center gap-1 rounded-full border border-dashed border-neutral-700 px-2 py-1 text-xs text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"
+        >
+          <Plus size={11} />
+          Subject
+        </button>
       </div>
 
       <div className="thin-scrollbar flex-1 overflow-y-auto">
@@ -118,6 +129,9 @@ export function EvidenceList({
             </div>
           );
         })}
+        {sorted.length === 0 && (
+          <p className="px-3 py-6 text-center text-xs text-neutral-600">No evidence yet. Use “+ Add Evidence” to start.</p>
+        )}
       </div>
     </div>
   );

@@ -14,3 +14,6 @@ export interface ImageMetadata {
 
 /** Read metadata from an image on disk. Missing values are null. */
 export function extractImageMetadata(filePath: string): Promise<ImageMetadata>;
+
+/** Read metadata from in-memory image bytes (e.g. an upload). Missing values are null. */
+export function extractImageMetadataFromBuffer(buffer: Buffer, fileName: string): Promise<ImageMetadata>;
