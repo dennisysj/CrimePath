@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ComponentType } from "react";
-import { Camera, CreditCard, FileText, Film, HelpCircle, Image as ImageIcon, MapPin, MessageSquareText, Paperclip } from "lucide-react";
+import { Camera, CreditCard, FileText, Film, HelpCircle, Image as ImageIcon, MapPin, MessageSquareText, Navigation, Paperclip } from "lucide-react";
 import type { CaseAnalysis, Evidence, EvidenceType, Subject } from "../types";
 import { formatClock, formatClockWithSeconds } from "../timeUtils";
 import { CARD_HEIGHT, CARD_WIDTH, type CardPosition } from "./cardLayout";
@@ -24,6 +24,7 @@ const TYPE_ICON: Record<EvidenceType, IconComponent> = {
   image: ImageIcon,
   video: Film,
   document: FileText,
+  gps: Navigation,
   transaction: CreditCard,
   other: HelpCircle,
 };

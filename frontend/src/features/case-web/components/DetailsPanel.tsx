@@ -23,6 +23,7 @@ const EVIDENCE_TYPE_LABEL: Record<Evidence["evidenceType"], string> = {
   image: "Image", // UPDATED line 18-27: map replaced (was witness/cctv/gps/phone/transaction/transit/police/digital/other)
   video: "Video",
   document: "Document",
+  gps: "GPS",
   transaction: "Transaction",
   other: "Other",
 };

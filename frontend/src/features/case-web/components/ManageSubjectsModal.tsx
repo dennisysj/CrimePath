@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Loader2, Trash2, X } from "lucide-react";
 import type { Evidence, Subject, SubjectKind } from "../types";
-import type { SubjectInput } from "../api";
+import type { HistoryEntry, SubjectInput } from "../api";
+import { HistoryList } from "./HistoryList";
 
 interface ManageSubjectsModalProps {
   subjects: Subject[];
@@ -10,6 +11,8 @@ interface ManageSubjectsModalProps {
   onAdd: (input: SubjectInput) => Promise<Subject>;
   onUpdate: (id: string, input: Partial<SubjectInput>) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
+  /** Undefined for the demo case, which has no stored history. */
+  loadHistory?: () => Promise<HistoryEntry[]>;
 }
 
 const SUBJECT_KINDS: SubjectKind[] = ["person", "vehicle", "phone", "other"];
@@ -28,7 +31,15 @@ function errorText(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-export function ManageSubjectsModal({ subjects, evidence, onClose, onAdd, onUpdate, onRemove }: ManageSubjectsModalProps) {
+export function ManageSubjectsModal({
+  subjects,
+  evidence,
+  onClose,
+  onAdd,
+  onUpdate,
+  onRemove,
+  loadHistory,
+}: ManageSubjectsModalProps) {
   const [newName, setNewName] = useState("");
   const [newKind, setNewKind] = useState<SubjectKind>("person");
   const [adding, setAdding] = useState(false);
@@ -118,6 +129,12 @@ export function ManageSubjectsModal({ subjects, evidence, onClose, onAdd, onUpda
         </form>
 
         {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
+
+        {loadHistory && (
+          <div className="mt-4 border-t border-neutral-800 pt-3">
+            <HistoryList load={loadHistory} reloadKey={subjects} subjects={subjects} title="Case history" />
+          </div>
+        )}
       </div>
     </div>
   );

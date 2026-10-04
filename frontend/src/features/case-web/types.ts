@@ -12,6 +12,8 @@ export interface Subject {
 
 export interface CaseSummary {
   id: string;
+  /** Human-facing reference, e.g. CASE-001. */
+  caseNumber?: string;
   name: string;
   description?: string;
   status?: string;
@@ -23,6 +25,7 @@ export type EvidenceType =
   | "image"
   | "video"
   | "document"
+  | "gps"
   | "transaction"
   | "other";
 
@@ -83,6 +86,8 @@ export interface Evidence {
   notes?: string;
   attachments?: EvidenceAttachment[];
   involvedParties: InvolvedParty[]; // ADDED line 76: subjects beyond the primary one, each with a role
+  /** Investigator-set standing of the event (case_events.reliability). Never an AI score. */
+  reliability?: Reliability;
 }
 
 /**
@@ -151,3 +156,7 @@ export interface CaseAnalysis {
   corroborations: Corroboration[];
   aiSuggestions: AiSuggestion[];
 }
+
+export type Reliability = "unknown" | "uncertain" | "verified" | "corroborated" | "disputed";
+
+export const RELIABILITY_OPTIONS: Reliability[] = ["unknown", "uncertain", "verified", "corroborated", "disputed"];

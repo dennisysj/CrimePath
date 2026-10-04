@@ -65,12 +65,16 @@ function linkLabel(a: Evidence, b: Evidence, subjects: Subject[]): string {
  * actual elapsed time — connectors carry the real timing.
  */
 export function computeCardLayout(evidence: Evidence[], subjects: Subject[], analysis: CaseAnalysis): CardLayoutResult {
+  // Subjects with no evidence of their own (e.g. one whose evidence was all
+  // moved to someone else) don't get an empty lane. `subjects` is still
+  // used below for names.
+  const laneSubjects = subjects.filter((s) => evidence.some((e) => e.subjectId === s.id));
   const sortedAll = [...evidence].sort((a, b) => new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime());
   const columnById = new Map<string, number>();
   sortedAll.forEach((e, i) => columnById.set(e.id, i));
 
   const laneIndexBySubject = new Map<string, number>();
-  subjects.forEach((s, i) => laneIndexBySubject.set(s.id, i));
+  laneSubjects.forEach((s, i) => laneIndexBySubject.set(s.id, i));
 
   const positions = new Map<string, CardPosition>();
   evidence.forEach((e) => {
@@ -86,7 +90,7 @@ export function computeCardLayout(evidence: Evidence[], subjects: Subject[], ana
   });
 
   const laneLabelY = new Map<string, number>();
-  subjects.forEach((s, laneIndex) => {
+  laneSubjects.forEach((s, laneIndex) => {
     laneLabelY.set(s.id, MARGIN.top + laneIndex * LANE_STRIDE + LANE_LABEL_HEIGHT / 2);
   });
 
@@ -94,7 +98,7 @@ export function computeCardLayout(evidence: Evidence[], subjects: Subject[], ana
   const canvasWidth = MARGIN.left + (maxColumn + 1) * COLUMN_STRIDE + MARGIN.right - COLUMN_GAP;
   const canvasHeight = Math.max(
     LANE_STRIDE,
-    MARGIN.top + subjects.length * LANE_STRIDE + MARGIN.bottom - LANE_GAP
+    MARGIN.top + laneSubjects.length * LANE_STRIDE + MARGIN.bottom - LANE_GAP
   );
 
   const byId = new Map(evidence.map((e) => [e.id, e]));

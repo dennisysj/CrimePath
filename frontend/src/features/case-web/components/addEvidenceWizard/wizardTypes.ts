@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { Camera, CreditCard, FileText, Film, HelpCircle, Image, MessageSquareText } from "lucide-react";
+import { Camera, CreditCard, FileText, Film, HelpCircle, Image, MessageSquareText, Navigation } from "lucide-react";
 import type { EvidenceAttachment, EvidenceType, InvolvedParty, TimeCertainty } from "../../types";
 
 export type WizardStep = 1 | 2 | 3;
@@ -25,6 +25,7 @@ export const SOURCE_OPTIONS: SourceOption[] = [
   { type: "image", label: "Image", hint: "photo", icon: Image },
   { type: "video", label: "Video", hint: "other footage", icon: Film },
   { type: "document", label: "Document", hint: "report, record", icon: FileText },
+  { type: "gps", label: "GPS", hint: "location log", icon: Navigation },
   { type: "transaction", label: "Transaction", hint: "card, purchase", icon: CreditCard },
   { type: "other", label: "Other", hint: "anything else", icon: HelpCircle },
 ];
@@ -40,6 +41,7 @@ export const DEFAULT_CERTAINTY_FOR_SOURCE: Record<EvidenceType, "exact" | "appro
   cctv: "exact",
   image: "exact",
   video: "exact",
+  gps: "exact",
   transaction: "exact",
 };
 

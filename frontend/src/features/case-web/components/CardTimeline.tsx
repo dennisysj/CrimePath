@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import type { CaseAnalysis, Evidence, Subject } from "../types";
+import type { CaseAnalysis, Evidence, Reliability, Subject } from "../types";
+import type { HistoryEntry } from "../api";
 import type { Selection } from "../store";
 import { computeCardLayout, type ConnectorSpec } from "./cardLayout";
 import { LaneLabel } from "./LaneLabel";
@@ -17,6 +18,9 @@ interface CardTimelineProps {
   onClearSelection: () => void;
   onEditEvidence: (evidence: Evidence) => void;
   onRemoveEvidence: (id: string) => void;
+  onSetReliability: (id: string, reliability: Reliability) => void;
+  /** Undefined for the demo case, which has no stored history. */
+  loadHistory?: (evidenceId: string) => Promise<HistoryEntry[]>;
   onConfirmSuggestion: (id: string) => void;
   onDismissSuggestion: (id: string) => void;
 }
@@ -56,6 +60,8 @@ export function CardTimeline({
   onClearSelection,
   onEditEvidence,
   onRemoveEvidence,
+  onSetReliability,
+  loadHistory,
   onConfirmSuggestion,
   onDismissSuggestion,
 }: CardTimelineProps) {
@@ -73,9 +79,10 @@ export function CardTimeline({
           style={{ width: layout.canvasWidth, height: layout.canvasHeight }}
           onClick={onClearSelection}
         >
-          {subjects.map((s) => (
-            <LaneLabel key={s.id} subject={s} y={layout.laneLabelY.get(s.id) ?? 0} />
-          ))}
+          {subjects.map((s) => {
+            const y = layout.laneLabelY.get(s.id);
+            return y === undefined ? null : <LaneLabel key={s.id} subject={s} y={y} />;
+          })}
 
           <ConnectorLayer
             width={layout.canvasWidth}
@@ -112,6 +119,8 @@ export function CardTimeline({
         analysis={analysis}
         onEdit={onEditEvidence}
         onRemove={onRemoveEvidence}
+        onSetReliability={onSetReliability}
+        loadHistory={loadHistory}
         onConfirmSuggestion={onConfirmSuggestion}
         onDismissSuggestion={onDismissSuggestion}
       />

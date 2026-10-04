@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { caseWebApi, type SubjectInput } from "./api";
+import { caseWebApi, type CaseUpdate, type SubjectInput } from "./api";
 import {
   aiSuggestions as mockAiSuggestions,
   caseName as mockCaseName,
@@ -9,7 +9,7 @@ import {
   gaps as mockGaps,
   subjects as mockSubjects,
 } from "./mockData";
-import type { AiSuggestionStatus, CaseAnalysis, CaseSummary, Evidence, Subject } from "./types";
+import type { AiSuggestionStatus, CaseAnalysis, CaseSummary, Evidence, Reliability, Subject } from "./types";
 
 const EMPTY_ANALYSIS: CaseAnalysis = {
   conflicts: [],
@@ -37,12 +37,14 @@ interface CaseWebState {
   load: () => Promise<void>;
   selectCase: (id: string) => Promise<void>;
   createCase: (input: { name: string; description?: string }) => Promise<void>;
+  updateCase: (input: CaseUpdate) => Promise<void>;
   deleteCase: (id: string) => Promise<void>;
   addSubject: (input: SubjectInput) => Promise<Subject>;
   updateSubject: (id: string, input: Partial<SubjectInput>) => Promise<void>;
   removeSubject: (id: string) => Promise<void>;
   addEvidence: (input: EvidenceInput) => Promise<void>;
   updateEvidence: (id: string, input: EvidenceInput) => Promise<void>;
+  setReliability: (id: string, reliability: Reliability) => Promise<void>;
   removeEvidence: (id: string) => Promise<void>;
   updateSuggestionStatus: (id: string, status: AiSuggestionStatus) => Promise<void>;
   selectEvidence: (id: string) => void;
@@ -139,7 +141,7 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
       caseWebApi.getCaseName(caseId),
       caseWebApi.getSubjects(caseId),
       caseWebApi.getEvidence(caseId),
-      caseWebApi.getAnalysis(),
+      caseWebApi.getAnalysis(caseId),
     ]);
     rememberCase(caseId);
     set({ cases, selectedCaseId: caseId, caseName, subjects, evidence, analysis, selection: null, loading: false });
@@ -190,6 +192,15 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
     createCase: async (input) => {
       const created = await persist("Couldn't create case", () => caseWebApi.createCase(input));
       await loadCase(withSampleCase([created, ...get().cases]), created.id);
+    },
+
+    updateCase: async (input) => {
+      if (isDemo()) return;
+      const updated = await persist("Couldn't update case", () => caseWebApi.updateCase(get().selectedCaseId, input));
+      set((state) => ({
+        caseName: updated.name,
+        cases: state.cases.map((c) => (c.id === updated.id ? { ...c, ...updated, description: updated.description ?? undefined } : c)),
+      }));
     },
 
     deleteCase: async (id) => {
@@ -244,10 +255,22 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
     },
 
     updateEvidence: async (id, input) => {
+      const current = get().evidence.find((e) => e.id === id);
       const updated = isDemo()
-        ? { ...input, id }
+        ? { ...current, ...input, id }
         : await persist("Couldn't update evidence", () =>
             caseWebApi.updateEvidence(get().selectedCaseId, id, input)
+          );
+      set((state) => ({ evidence: state.evidence.map((e) => (e.id === id ? updated : e)) }));
+    },
+
+    setReliability: async (id, reliability) => {
+      const current = get().evidence.find((e) => e.id === id);
+      if (!current) return;
+      const updated = isDemo()
+        ? { ...current, reliability }
+        : await persist("Couldn't update reliability", () =>
+            caseWebApi.setReliability(get().selectedCaseId, id, reliability)
           );
       set((state) => ({ evidence: state.evidence.map((e) => (e.id === id ? updated : e)) }));
     },
@@ -263,7 +286,11 @@ export const useCaseWebStore = create<CaseWebState>((set, get) => {
     },
 
     updateSuggestionStatus: async (id, status) => {
-      await caseWebApi.updateSuggestionStatus(id, status);
+      if (!isDemo()) {
+        await persist("Couldn't save suggestion decision", () =>
+          caseWebApi.updateSuggestionStatus(id, status, get().selectedCaseId)
+        );
+      }
       set({
         analysis: {
           ...get().analysis,

@@ -1,9 +1,19 @@
 import { useState } from "react";
 import { FileText, Paperclip, Pencil, Trash2 } from "lucide-react";
 import type { AiSuggestion, CaseAnalysis, Evidence, EvidenceType, Subject } from "../types";
-import { ROLE_LABELS } from "../types";
+import { RELIABILITY_OPTIONS, ROLE_LABELS, type Reliability } from "../types";
+
+const RELIABILITY_COLOR: Record<Reliability, string> = {
+  unknown: "text-neutral-400",
+  uncertain: "text-amber-300",
+  verified: "text-emerald-300",
+  corroborated: "text-emerald-300",
+  disputed: "text-red-300",
+};
 import { formatClock, formatClockWithSeconds } from "../timeUtils";
 import { formatBytes } from "../attachmentUtils";
+import type { HistoryEntry } from "../api";
+import { HistoryList } from "./HistoryList";
 
 interface EvidenceDetailPanelProps {
   evidence: Evidence | undefined;
@@ -11,6 +21,8 @@ interface EvidenceDetailPanelProps {
   analysis: CaseAnalysis;
   onEdit: (evidence: Evidence) => void;
   onRemove: (id: string) => void;
+  onSetReliability: (id: string, reliability: Reliability) => void;
+  loadHistory?: (evidenceId: string) => Promise<HistoryEntry[]>;
   onConfirmSuggestion: (id: string) => void;
   onDismissSuggestion: (id: string) => void;
 }
@@ -21,6 +33,7 @@ const EVIDENCE_TYPE_LABEL: Record<EvidenceType, string> = {
   image: "Image",
   video: "Video",
   document: "Document",
+  gps: "GPS",
   transaction: "Transaction",
   other: "Other",
 };
@@ -32,6 +45,8 @@ export function EvidenceDetailPanel({
   analysis,
   onEdit,
   onRemove,
+  onSetReliability,
+  loadHistory,
   onConfirmSuggestion,
   onDismissSuggestion,
 }: EvidenceDetailPanelProps) {
@@ -121,6 +136,23 @@ export function EvidenceDetailPanel({
           label="Location"
           value={`${evidence.location.name} (${evidence.location.lat.toFixed(4)}, ${evidence.location.lng.toFixed(4)})`}
         />
+        <div className="flex items-center gap-2">
+          <dt className="w-16 flex-shrink-0 text-neutral-600">Reliability</dt>
+          <dd>
+            <select
+              value={evidence.reliability ?? "unknown"}
+              onChange={(e) => onSetReliability(evidence.id, e.target.value as Reliability)}
+              title="Investigator's assessment of this event's evidentiary standing"
+              className={`rounded border border-neutral-700 bg-neutral-950 px-1.5 py-0.5 text-xs capitalize focus:border-sky-500 focus:outline-none ${RELIABILITY_COLOR[evidence.reliability ?? "unknown"]}`}
+            >
+              {RELIABILITY_OPTIONS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </dd>
+        </div>
       </dl>
 
       <p className="mb-3 text-sm text-neutral-300">"{evidence.event}"</p>
@@ -197,6 +229,17 @@ export function EvidenceDetailPanel({
               onDismiss={() => onDismissSuggestion(s.id)}
             />
           ))}
+        </div>
+      )}
+      {loadHistory && (
+        <div className="mt-3 border-t border-neutral-800 pt-3">
+          {/* key: reset to collapsed when a different card is selected; reloadKey: refetch after an edit */}
+          <HistoryList
+            key={evidence.id}
+            load={() => loadHistory(evidence.id)}
+            reloadKey={evidence}
+            subjects={subjects}
+          />
         </div>
       )}
     </div>

@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Archive, Loader2, Trash2, Users, X } from "lucide-react";
+import { Archive, Loader2, Pencil, Trash2, Users, X } from "lucide-react";
 import { SAMPLE_CASE_ID, useCaseWebStore } from "../store";
+import { getCaseHistory, getEvidenceHistory, isMockMode } from "../api";
 import type { Evidence, Subject } from "../types";
 import { formatClock } from "../timeUtils";
 import { AddEvidenceModal } from "./AddEvidenceModal";
 import { CardTimeline } from "./CardTimeline";
 import { EvidenceList } from "./EvidenceList";
 import { ManageSubjectsModal } from "./ManageSubjectsModal";
+import { EditCaseModal } from "./EditCaseModal";
 
 interface AllEvidencePageProps {
   open: boolean;
@@ -23,6 +25,7 @@ const EVIDENCE_TYPE_LABEL: Record<Evidence["evidenceType"], string> = {
   image: "Image",
   video: "Video",
   document: "Document",
+  gps: "GPS",
   transaction: "Transaction",
   other: "Other",
 };
@@ -139,11 +142,13 @@ export function CaseWebPage() {
     selectCase,
     createCase,
     deleteCase,
+    updateCase,
     addSubject,
     updateSubject,
     removeSubject,
     addEvidence,
     updateEvidence,
+    setReliability,
     removeEvidence,
     selectSubject,
     selectEvidence,
@@ -159,6 +164,8 @@ export function CaseWebPage() {
   const [newCaseError, setNewCaseError] = useState("");
   const [creatingCase, setCreatingCase] = useState(false);
   const [confirmDeleteCase, setConfirmDeleteCase] = useState(false);
+  const [editCaseOpen, setEditCaseOpen] = useState(false);
+  const currentCase = cases.find((c) => c.id === selectedCaseId);
   const isDemoCase = selectedCaseId === SAMPLE_CASE_ID;
 
   // Store actions already put failures in the error banner; swallow the
@@ -181,7 +188,12 @@ export function CaseWebPage() {
     <div className="flex h-screen flex-col bg-neutral-950 text-neutral-100">
       <header className="flex items-center justify-between border-b border-neutral-800 px-6 py-4">
         <div>
-          <h1 className="text-lg font-semibold">{caseName}</h1>
+          <h1 className="text-lg font-semibold">
+            {currentCase?.caseNumber && (
+              <span className="mr-2 font-mono text-sm font-normal text-neutral-500">{currentCase.caseNumber}</span>
+            )}
+            {caseName}
+          </h1>
           <p className="mt-0.5 font-mono text-xs text-neutral-500">
             {evidence.length} evidence · {analysis.conflicts.length} conflicts · {analysis.gaps.length} gaps ·{" "}
             {analysis.aiSuggestions.length} AI suggestions
@@ -199,6 +211,17 @@ export function CaseWebPage() {
               </option>
             ))}
           </select>
+          {!isDemoCase && (
+            <button
+              type="button"
+              onClick={() => setEditCaseOpen(true)}
+              title="Case details and history"
+              aria-label="Case details and history"
+              className="rounded border border-neutral-700 p-2 text-neutral-400 hover:border-neutral-500 hover:text-white"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
           {!isDemoCase && (
             <button
               type="button"
@@ -250,6 +273,12 @@ export function CaseWebPage() {
         </div>
       )}
 
+      {isMockMode && !isDemoCase && (
+        <div className="border-b border-amber-800 bg-amber-950/30 px-6 py-1.5 text-xs text-amber-200">
+          Demo mode: cases, evidence, and history are temporary and disappear when you reload. Use database mode to save your work.
+        </div>
+      )}
+
       {isDemoCase && !error && (
         <div className="border-b border-neutral-800 bg-neutral-900 px-6 py-1.5 text-xs text-neutral-400">
           This is the built-in demo case. Changes here stay in your browser and aren't saved to the database. Create
@@ -296,6 +325,8 @@ export function CaseWebPage() {
               onClearSelection={clearSelection}
               onEditEvidence={(item) => setEvidenceModal({ editing: item })}
               onRemoveEvidence={removeEvidenceQuietly}
+              onSetReliability={(id, reliability) => setReliability(id, reliability).catch(() => undefined)}
+              loadHistory={isDemoCase ? undefined : (id) => getEvidenceHistory(selectedCaseId, id)}
               onConfirmSuggestion={(id) => updateSuggestionStatus(id, "confirmed")}
               onDismissSuggestion={(id) => updateSuggestionStatus(id, "dismissed")}
             />
@@ -324,6 +355,17 @@ export function CaseWebPage() {
           onAdd={addSubject}
           onUpdate={updateSubject}
           onRemove={removeSubject}
+          loadHistory={isDemoCase ? undefined : () => getCaseHistory(selectedCaseId)}
+        />
+      )}
+
+      {editCaseOpen && currentCase && (
+        <EditCaseModal
+          caseItem={currentCase}
+          subjects={subjects}
+          onClose={() => setEditCaseOpen(false)}
+          onSave={updateCase}
+          loadHistory={() => getCaseHistory(selectedCaseId)}
         />
       )}
 
